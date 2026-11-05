@@ -15,6 +15,7 @@ import com.unpackr.engine.payload.DeltaManifestParser
 import com.unpackr.engine.payload.InstallOpType
 import com.unpackr.engine.payload.InstallOperation
 import com.unpackr.engine.payload.PartitionUpdate
+import com.unpackr.engine.source.ByteArraySource
 import com.unpackr.engine.source.FileChannelSource
 import com.unpackr.engine.source.FirmwareSource
 import kotlinx.coroutines.Dispatchers
@@ -109,23 +110,28 @@ class AbPayloadHandler : FirmwareHandler {
             // Read end of central directory
             val eocdOffset = findZipEocd(src) ?: return null
             val cdOffset = src.readIntLe(eocdOffset + 16).toLong() and 0xFFFFFFFFL
+            val cdSize = src.readIntLe(eocdOffset + 12).toLong() and 0xFFFFFFFFL
             val cdEntries = src.readShortLe(eocdOffset + 10).toInt() and 0xFFFF
 
-            var pos = cdOffset
+            if (cdSize > 10 * 1024 * 1024) return null // Safety: CD shouldn't be > 10MB
+
+            // Read the entire central directory into memory to minimize HTTP requests
+            val cdBuffer = src.readBytes(cdOffset, cdSize.toInt())
+            val cdSource = ByteArraySource(cdBuffer)
+
+            var pos = 0L
             for (i in 0 until cdEntries) {
-                if (pos + 46 > src.size) break
-                val sig = src.readIntLe(pos)
+                if (pos + 46 > cdSize) break
+                val sig = cdSource.readIntLe(pos)
                 if (sig != 0x02014B50) break
 
-                val method = src.readShortLe(pos + 10).toInt() and 0xFFFF
-                val uncompSize = src.readIntLe(pos + 24).toLong() and 0xFFFFFFFFL
-                val nameLen = src.readShortLe(pos + 28).toInt() and 0xFFFF
-                val extraLen = src.readShortLe(pos + 30).toInt() and 0xFFFF
-                val commentLen = src.readShortLe(pos + 32).toInt() and 0xFFFF
-                val localHeaderOffset = src.readIntLe(pos + 42).toLong() and 0xFFFFFFFFL
+                val method = cdSource.readShortLe(pos + 10).toInt() and 0xFFFF
+                val uncompSize = cdSource.readIntLe(pos + 24).toLong() and 0xFFFFFFFFL
+                val nameLen = cdSource.readShortLe(pos + 28).toInt() and 0xFFFF
+                val extraLen = cdSource.readShortLe(pos + 30).toInt() and 0xFFFF
+                val commentLen = cdSource.readShortLe(pos + 32).toInt() and 0xFFFF
 
-                val nameBytes = src.readBytes(pos + 46, nameLen)
-                val entryName = String(nameBytes, Charsets.UTF_8)
+                val entryName = String(cdSource.readBytes(pos + 46, nameLen), Charsets.UTF_8)
 
                 if (entryName == "payload.bin") {
                     val isStored = (method == 0)

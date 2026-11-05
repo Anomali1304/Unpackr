@@ -7,9 +7,11 @@ import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
 
 /**
- * FirmwareSource implementation backed by HTTP/HTTPS with byte-range requests (RFC 7233).
- * Enables remote inspection of multi-gigabyte ZIP/OTA/TAR archives by reading headers
- * and central directories on-demand without downloading the entire file into local storage.
+ * Robust FirmwareSource implementation for remote HTTP/HTTPS links.
+ * Optimized for high-latency CDNs (like Xiaomi/MIUI) by:
+ * 1. Using a browser-like User-Agent.
+ * 2. Caching the first and last 128KB of the file (critical for ZIP/TAR metadata).
+ * 3. Minimizing small Range requests.
  */
 class HttpFirmwareSource(
     val url: String,
@@ -17,10 +19,11 @@ class HttpFirmwareSource(
 ) : FirmwareSource {
 
     companion object {
-        private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+        private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+        private const val CACHE_SIZE = 128 * 1024 // 128KB cache for head/tail
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(20, TimeUnit.SECONDS)
+            .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
@@ -31,51 +34,68 @@ class HttpFirmwareSource(
     val supportsRange: Boolean
     val fileName: String
 
+    private var headCache: ByteArray? = null
+    private var tailCache: ByteArray? = null
+    private var tailOffset: Long = -1L
+
     init {
-        // Probe file size and range support using a small GET request instead of HEAD.
-        // Many CDNs (Xiaomi/MIUI included) often block HEAD or specific User-Agents.
-        val probeReq = Request.Builder()
+        // Probe file size and fetch the first chunk (HEAD cache) in one go
+        val headProbeReq = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
-            .header("Range", "bytes=0-0")
+            .header("Range", "bytes=0-${CACHE_SIZE - 1}")
             .get()
             .build()
 
-        client.newCall(probeReq).execute().use { response ->
+        client.newCall(headProbeReq).execute().use { response ->
             if (!response.isSuccessful && response.code != 206) {
-                throw IOException("Failed to connect to remote server: HTTP ${response.code}")
+                throw IOException("Remote server returned HTTP ${response.code} (URL might be expired or restricted)")
             }
 
             val contentRange = response.header("Content-Range")
             val contentLength = response.header("Content-Length")
             val contentDisposition = response.header("Content-Disposition")
 
-            // Parse size from Content-Range (e.g., bytes 0-0/1234567)
             val fullSize = if (contentRange != null && contentRange.contains("/")) {
                 contentRange.substringAfterLast('/').toLongOrNull() ?: -1L
             } else {
                 contentLength?.toLongOrNull() ?: -1L
             }
 
-            val guessedName = if (contentDisposition != null && contentDisposition.contains("filename=")) {
+            if (fullSize <= 0) {
+                throw IOException("Unable to determine remote file size (Content-Length missing)")
+            }
+
+            size = fullSize
+            supportsRange = response.code == 206
+            fileName = if (contentDisposition?.contains("filename=") == true) {
                 contentDisposition.substringAfter("filename=").trim('"', ' ', ';')
             } else {
                 url.substringBefore('?').substringAfterLast('/').ifBlank { "remote_firmware.bin" }
             }
-            
-            fileName = guessedName
-            size = fullSize
-            supportsRange = response.code == 206
 
-            if (size <= 0) {
-                throw IOException("Unable to determine remote file size from $url")
+            if (supportsRange) {
+                headCache = response.body?.bytes()
             }
+        }
+
+        // Prefetch tail cache for ZIP parsing (EOCD is at the end)
+        if (supportsRange && size > CACHE_SIZE) {
+            tailOffset = (size - CACHE_SIZE).coerceAtLeast(0L)
+            val tailReq = Request.Builder()
+                .url(url)
+                .header("User-Agent", USER_AGENT)
+                .header("Range", "bytes=$tailOffset-${size - 1}")
+                .get()
+                .build()
             
-            if (!supportsRange) {
-                // Technically we can still read, but it will be inefficient. 
-                // However, our read() implementation depends on Range.
-                throw IOException("Server at $url does not support HTTP Range requests (Selective extraction requires Range support)")
-            }
+            try {
+                client.newCall(tailReq).execute().use { resp ->
+                    if (resp.isSuccessful || resp.code == 206) {
+                        tailCache = resp.body?.bytes()
+                    }
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -84,6 +104,27 @@ class HttpFirmwareSource(
         val lengthToRead = (size - position).coerceAtMost(dst.remaining().toLong()).toInt()
         if (lengthToRead <= 0) return 0
 
+        // 1. Check head cache
+        if (headCache != null && position < CACHE_SIZE) {
+            val offsetInCache = position.toInt()
+            val availableInCache = (CACHE_SIZE - offsetInCache).coerceAtMost(lengthToRead)
+            if (availableInCache > 0) {
+                dst.put(headCache!!, offsetInCache, availableInCache)
+                return availableInCache
+            }
+        }
+
+        // 2. Check tail cache
+        if (tailCache != null && position >= tailOffset) {
+            val offsetInCache = (position - tailOffset).toInt()
+            val availableInCache = (tailCache!!.size - offsetInCache).coerceAtMost(lengthToRead)
+            if (availableInCache > 0) {
+                dst.put(tailCache!!, offsetInCache, availableInCache)
+                return availableInCache
+            }
+        }
+
+        // 3. Fallback to network request
         val endPosition = position + lengthToRead - 1
         val req = Request.Builder()
             .url(url)
@@ -93,25 +134,14 @@ class HttpFirmwareSource(
 
         client.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful && resp.code != 206) {
-                throw IOException("Remote Range request failed: HTTP ${resp.code} for range $position-$endPosition")
+                throw IOException("Range request failed: HTTP ${resp.code}")
             }
-            val body = resp.body ?: throw IOException("Empty response body from $url")
-            val stream = body.byteStream()
-            val tempBuffer = ByteArray(16384)
-            var totalRead = 0
-
-            while (totalRead < lengthToRead) {
-                val needed = (lengthToRead - totalRead).coerceAtMost(tempBuffer.size)
-                val n = stream.read(tempBuffer, 0, needed)
-                if (n == -1) break
-                dst.put(tempBuffer, 0, n)
-                totalRead += n
-            }
-            return totalRead
+            val body = resp.body ?: throw IOException("Empty body")
+            val bytes = body.bytes()
+            dst.put(bytes)
+            return bytes.size
         }
     }
 
-    override fun close() {
-        // Shared dispatcher pool
-    }
+    override fun close() {}
 }
