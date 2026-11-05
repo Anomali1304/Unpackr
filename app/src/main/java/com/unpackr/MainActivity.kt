@@ -35,12 +35,28 @@ import com.unpackr.ui.theme.UnpackrTheme
 import com.unpackr.ui.viewmodel.ScreenState
 import com.unpackr.ui.viewmodel.UnpackrViewModel
 
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.ui.unit.IntOffset
+
 class MainActivity : ComponentActivity() {
 
     private val viewModel: UnpackrViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        
+        // Custom exit animation for the splash screen
+        splashScreen.setOnExitAnimationListener { splashScreenView ->
+            val fadeOut = android.view.animation.AlphaAnimation(1f, 0f).apply {
+                duration = 500L
+            }
+            splashScreenView.view.startAnimation(fadeOut)
+            splashScreenView.remove()
+        }
+
         enableEdgeToEdge()
 
         setContent {
@@ -68,6 +84,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+
 @Composable
 fun UnpackrApp(viewModel: UnpackrViewModel) {
     val screenState by viewModel.screenState.collectAsStateWithLifecycle()
@@ -81,97 +98,116 @@ fun UnpackrApp(viewModel: UnpackrViewModel) {
     var showOptionsSheet by remember { mutableStateOf(false) }
 
     Surface(modifier = Modifier.fillMaxSize()) {
-        when (val state = screenState) {
-            is ScreenState.Home -> {
-                HomeScreen(
-                    isLoading = isLoading,
-                    errorMessage = errorMessage,
-                    recentFiles = recentFiles,
-                    onFileSelected = { uri -> viewModel.loadFirmwareUri(uri) },
-                    onUrlSubmitted = { url -> viewModel.loadFirmwareUrl(url) },
-                    onNavigateSettings = { viewModel.navigateTo(ScreenState.Settings) }
+        AnimatedContent(
+            targetState = screenState,
+            transitionSpec = {
+                val springSpec = spring<IntOffset>(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessLow
                 )
-            }
-
-            is ScreenState.Detected -> {
-                BackHandler {
-                    viewModel.navigateTo(ScreenState.Home)
+                
+                if (targetState is ScreenState.Home) {
+                    (slideInHorizontally(springSpec) { -it } + fadeIn())
+                        .togetherWith(slideOutHorizontally(springSpec) { it } + fadeOut())
+                } else {
+                    (slideInHorizontally(springSpec) { it } + fadeIn())
+                        .togetherWith(slideOutHorizontally(springSpec) { -it } + fadeOut())
                 }
-
-                DetectedScreen(
-                    info = state.info,
-                    match = state.match,
-                    selectedPartitions = selectedPartitions,
-                    searchQuery = searchQuery,
-                    onSearchQueryChange = { viewModel.updateSearchQuery(it) },
-                    onTogglePartition = { viewModel.togglePartition(it) },
-                    onSelectAll = { viewModel.selectAll(state.info.partitions) },
-                    onDeselectAll = { viewModel.deselectAll() },
-                    onSelectCommon = { viewModel.selectCommon(state.info.partitions) },
-                    onSelectSystem = { viewModel.selectSystem(state.info.partitions) },
-                    onOptionsClick = { showOptionsSheet = true },
-                    onStartExtraction = { viewModel.startExtraction() },
-                    onBack = { viewModel.navigateTo(ScreenState.Home) }
-                )
-
-                if (showOptionsSheet) {
-                    OptionsBottomSheet(
-                        currentOptions = options,
-                        onDismiss = { showOptionsSheet = false },
-                        onSave = { viewModel.updateOptions(it) }
+            },
+            label = "screen_transition"
+        ) { state ->
+            when (state) {
+                is ScreenState.Home -> {
+                    HomeScreen(
+                        isLoading = isLoading,
+                        errorMessage = errorMessage,
+                        recentFiles = recentFiles,
+                        onFileSelected = { uri -> viewModel.loadFirmwareUri(uri) },
+                        onUrlSubmitted = { url -> viewModel.loadFirmwareUrl(url) },
+                        onNavigateSettings = { viewModel.navigateTo(ScreenState.Settings) }
                     )
                 }
-            }
 
-            is ScreenState.Extracting -> {
-                BackHandler {
-                    // Handled inside ExtractingScreen via cancel confirmation
+                is ScreenState.Detected -> {
+                    BackHandler {
+                        viewModel.navigateTo(ScreenState.Home)
+                    }
+
+                    DetectedScreen(
+                        info = state.info,
+                        match = state.match,
+                        selectedPartitions = selectedPartitions,
+                        searchQuery = searchQuery,
+                        onSearchQueryChange = { viewModel.updateSearchQuery(it) },
+                        onTogglePartition = { viewModel.togglePartition(it) },
+                        onSelectAll = { viewModel.selectAll(state.info.partitions) },
+                        onDeselectAll = { viewModel.deselectAll() },
+                        onSelectCommon = { viewModel.selectCommon(state.info.partitions) },
+                        onSelectSystem = { viewModel.selectSystem(state.info.partitions) },
+                        onOptionsClick = { showOptionsSheet = true },
+                        onStartExtraction = { viewModel.startExtraction() },
+                        onBack = { viewModel.navigateTo(ScreenState.Home) }
+                    )
+
+                    if (showOptionsSheet) {
+                        OptionsBottomSheet(
+                            currentOptions = options,
+                            onDismiss = { showOptionsSheet = false },
+                            onSave = { viewModel.updateOptions(it) }
+                        )
+                    }
                 }
 
-                ExtractingScreen(
-                    currentPartition = state.currentPartition,
-                    progress = state.progress,
-                    speedBytesPerSec = state.speed,
-                    etaSeconds = state.etaSeconds,
-                    onCancel = { viewModel.cancelExtraction() }
-                )
-            }
+                is ScreenState.Extracting -> {
+                    BackHandler {
+                        // Handled inside ExtractingScreen via cancel confirmation
+                    }
 
-            is ScreenState.Result -> {
-                BackHandler {
-                    viewModel.navigateTo(ScreenState.Home)
+                    ExtractingScreen(
+                        currentPartition = state.currentPartition,
+                        progress = state.progress,
+                        speedBytesPerSec = state.speed,
+                        etaSeconds = state.etaSeconds,
+                        onCancel = { viewModel.cancelExtraction() }
+                    )
                 }
 
-                ResultScreen(
-                    successful = state.successful,
-                    failed = state.failed,
-                    durationMs = state.durationMs,
-                    onDone = { viewModel.navigateTo(ScreenState.Home) }
-                )
-            }
+                is ScreenState.Result -> {
+                    BackHandler {
+                        viewModel.navigateTo(ScreenState.Home)
+                    }
 
-            is ScreenState.Unsupported -> {
-                BackHandler {
-                    viewModel.navigateTo(ScreenState.Home)
+                    ResultScreen(
+                        successful = state.successful,
+                        failed = state.failed,
+                        durationMs = state.durationMs,
+                        onDone = { viewModel.navigateTo(ScreenState.Home) }
+                    )
                 }
 
-                UnsupportedScreen(
-                    title = state.title,
-                    reason = state.reason,
-                    solution = state.solution,
-                    technical = state.technical,
-                    onBack = { viewModel.navigateTo(ScreenState.Home) }
-                )
-            }
+                is ScreenState.Unsupported -> {
+                    BackHandler {
+                        viewModel.navigateTo(ScreenState.Home)
+                    }
 
-            is ScreenState.Settings -> {
-                BackHandler {
-                    viewModel.navigateTo(ScreenState.Home)
+                    UnsupportedScreen(
+                        title = state.title,
+                        reason = state.reason,
+                        solution = state.solution,
+                        technical = state.technical,
+                        onBack = { viewModel.navigateTo(ScreenState.Home) }
+                    )
                 }
 
-                SettingsScreen(
-                    onBack = { viewModel.navigateTo(ScreenState.Home) }
-                )
+                is ScreenState.Settings -> {
+                    BackHandler {
+                        viewModel.navigateTo(ScreenState.Home)
+                    }
+
+                    SettingsScreen(
+                        onBack = { viewModel.navigateTo(ScreenState.Home) }
+                    )
+                }
             }
         }
     }

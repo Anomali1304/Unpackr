@@ -45,10 +45,12 @@ xz = "1.10"
 brotliDec = "0.1.2"
 lz4Java = "1.8.0"
 zstdJni = "1.5.6-8"
+coreSplashscreen = "1.0.1"
 
 
 
 [libraries]
+androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "coreSplashscreen" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }

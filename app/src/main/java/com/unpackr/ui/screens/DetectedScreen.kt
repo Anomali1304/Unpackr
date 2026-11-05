@@ -49,7 +49,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,6 +61,12 @@ import com.unpackr.R
 import com.unpackr.engine.model.FirmwareInfo
 import com.unpackr.engine.model.FormatMatch
 import com.unpackr.engine.model.PartitionEntry
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -140,11 +145,21 @@ fun DetectedScreen(
                         )
                     }
 
+                    val buttonScale by animateFloatAsState(
+                        targetValue = if (selectedPartitions.isNotEmpty()) 1f else 0.9f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioLowBouncy,
+                            stiffness = Spring.StiffnessLow
+                        ),
+                        label = "extract_button_scale"
+                    )
+
                     Button(
                         onClick = onStartExtraction,
                         enabled = selectedPartitions.isNotEmpty(),
                         modifier = Modifier
                             .height(52.dp)
+                            .graphicsLayer(scaleX = buttonScale, scaleY = buttonScale)
                             .testTag("start_extraction_button"),
                         shape = RoundedCornerShape(20.dp),
                         colors = ButtonDefaults.buttonColors(
@@ -172,82 +187,97 @@ fun DetectedScreen(
         ) {
             // Hero card: Firmware Details
             item {
-                ElevatedCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.elevatedCardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
+                var visible by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) {
+                    delay(100)
+                    visible = true
+                }
+                AnimatedVisibility(
+                    visible = visible,
+                    enter = slideInVertically(
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioLowBouncy,
+                            stiffness = Spring.StiffnessLow
+                        )
+                    ) { it / 2 } + fadeIn()
                 ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = info.formatName,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
+                    ElevatedCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.elevatedCardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(20.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    text = "${(match.confidence * 100).toInt()}% match",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    fontWeight = FontWeight.Bold
+                                    text = info.formatName,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.weight(1f)
                                 )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = match.details,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
-                        )
-
-                        if (!info.securityPatch.isNullOrBlank() || !info.brandOrDevice.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                if (!info.brandOrDevice.isNullOrBlank()) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.Smartphone,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp),
-                                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = info.brandOrDevice,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                    }
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                ) {
+                                    Text(
+                                        text = "${(match.confidence * 100).toInt()}% match",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
-                                if (!info.securityPatch.isNullOrBlank()) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.Security,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp),
-                                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = "Patch: ${info.securityPatch}",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = match.details,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                            )
+
+                            if (!info.securityPatch.isNullOrBlank() || !info.brandOrDevice.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    if (!info.brandOrDevice.isNullOrBlank()) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.Smartphone,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp),
+                                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = info.brandOrDevice,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                    }
+                                    if (!info.securityPatch.isNullOrBlank()) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.Security,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp),
+                                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "Patch: ${info.securityPatch}",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -258,26 +288,41 @@ fun DetectedScreen(
 
             // Search Bar
             item {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = onSearchQueryChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("partition_search_input"),
-                    placeholder = { Text(stringResource(R.string.detected_search_placeholder)) },
-                    leadingIcon = {
-                        Icon(imageVector = Icons.Default.Search, contentDescription = null)
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { onSearchQueryChange("") }) {
-                                Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear")
+                var visible by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) {
+                    delay(200)
+                    visible = true
+                }
+                AnimatedVisibility(
+                    visible = visible,
+                    enter = slideInVertically(
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioLowBouncy,
+                            stiffness = Spring.StiffnessLow
+                        )
+                    ) { it / 3 } + fadeIn()
+                ) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = onSearchQueryChange,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("partition_search_input"),
+                        placeholder = { Text(stringResource(R.string.detected_search_placeholder)) },
+                        leadingIcon = {
+                            Icon(imageVector = Icons.Default.Search, contentDescription = null)
+                        },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { onSearchQueryChange("") }) {
+                                    Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear")
+                                }
                             }
-                        }
-                    },
-                    shape = RoundedCornerShape(20.dp),
-                    singleLine = true
-                )
+                        },
+                        shape = RoundedCornerShape(20.dp),
+                        singleLine = true
+                    )
+                }
             }
 
             // Shortcuts Chips
@@ -326,7 +371,15 @@ fun DetectedScreen(
                 PartitionItemCard(
                     partition = partition,
                     isSelected = isSelected,
-                    onToggle = { onTogglePartition(partition.name) }
+                    onToggle = { onTogglePartition(partition.name) },
+                    modifier = Modifier.animateItem(
+                        placementSpec = spring(
+                            dampingRatio = Spring.DampingRatioLowBouncy,
+                            stiffness = Spring.StiffnessLow
+                        ),
+                        fadeInSpec = spring(stiffness = Spring.StiffnessLow),
+                        fadeOutSpec = spring(stiffness = Spring.StiffnessLow)
+                    )
                 )
             }
         }
@@ -337,10 +390,11 @@ fun DetectedScreen(
 fun PartitionItemCard(
     partition: PartitionEntry,
     isSelected: Boolean,
-    onToggle: () -> Unit
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onToggle)
             .testTag("partition_card_${partition.name}"),

@@ -2,10 +2,7 @@ package com.unpackr.engine.source
 
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
-import java.io.InputStream
 import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
 
@@ -20,9 +17,11 @@ class HttpFirmwareSource(
 ) : FirmwareSource {
 
     companion object {
+        private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
             .build()
@@ -33,27 +32,50 @@ class HttpFirmwareSource(
     val fileName: String
 
     init {
-        val headReq = Request.Builder().url(url).head().build()
-        val response = client.newCall(headReq).execute()
+        // Probe file size and range support using a small GET request instead of HEAD.
+        // Many CDNs (Xiaomi/MIUI included) often block HEAD or specific User-Agents.
+        val probeReq = Request.Builder()
+            .url(url)
+            .header("User-Agent", USER_AGENT)
+            .header("Range", "bytes=0-0")
+            .get()
+            .build()
 
-        val contentLengthHeader = response.header("Content-Length")
-        val acceptRangesHeader = response.header("Accept-Ranges")
-        val contentDisposition = response.header("Content-Disposition")
+        client.newCall(probeReq).execute().use { response ->
+            if (!response.isSuccessful && response.code != 206) {
+                throw IOException("Failed to connect to remote server: HTTP ${response.code}")
+            }
 
-        val guessedName = if (contentDisposition != null && contentDisposition.contains("filename=")) {
-            contentDisposition.substringAfter("filename=").trim('"', ' ', ';')
-        } else {
-            url.substringBefore('?').substringAfterLast('/').ifBlank { "remote_firmware.bin" }
-        }
-        fileName = guessedName
+            val contentRange = response.header("Content-Range")
+            val contentLength = response.header("Content-Length")
+            val contentDisposition = response.header("Content-Disposition")
 
-        size = contentLengthHeader?.toLongOrNull() ?: -1L
-        supportsRange = (acceptRangesHeader?.equals("bytes", ignoreCase = true) == true) || response.isSuccessful
+            // Parse size from Content-Range (e.g., bytes 0-0/1234567)
+            val fullSize = if (contentRange != null && contentRange.contains("/")) {
+                contentRange.substringAfterLast('/').toLongOrNull() ?: -1L
+            } else {
+                contentLength?.toLongOrNull() ?: -1L
+            }
 
-        response.close()
+            val guessedName = if (contentDisposition != null && contentDisposition.contains("filename=")) {
+                contentDisposition.substringAfter("filename=").trim('"', ' ', ';')
+            } else {
+                url.substringBefore('?').substringAfterLast('/').ifBlank { "remote_firmware.bin" }
+            }
+            
+            fileName = guessedName
+            size = fullSize
+            supportsRange = response.code == 206
 
-        if (size <= 0) {
-            throw IOException("Unable to determine remote file size from $url (HTTP ${response.code})")
+            if (size <= 0) {
+                throw IOException("Unable to determine remote file size from $url")
+            }
+            
+            if (!supportsRange) {
+                // Technically we can still read, but it will be inefficient. 
+                // However, our read() implementation depends on Range.
+                throw IOException("Server at $url does not support HTTP Range requests (Selective extraction requires Range support)")
+            }
         }
     }
 
@@ -65,6 +87,7 @@ class HttpFirmwareSource(
         val endPosition = position + lengthToRead - 1
         val req = Request.Builder()
             .url(url)
+            .header("User-Agent", USER_AGENT)
             .header("Range", "bytes=$position-$endPosition")
             .build()
 
@@ -74,7 +97,7 @@ class HttpFirmwareSource(
             }
             val body = resp.body ?: throw IOException("Empty response body from $url")
             val stream = body.byteStream()
-            val tempBuffer = ByteArray(8192)
+            val tempBuffer = ByteArray(16384)
             var totalRead = 0
 
             while (totalRead < lengthToRead) {
@@ -89,6 +112,6 @@ class HttpFirmwareSource(
     }
 
     override fun close() {
-        // OkHttpClient shared dispatcher connection pool handles lifecycle
+        // Shared dispatcher pool
     }
 }
