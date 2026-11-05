@@ -82,8 +82,14 @@ android {
       excludes += setOf(
         "META-INF/maven/**",
         "META-INF/proguard/**",
+        "META-INF/versions/**",
         "**/*.native",
-        "**/*.so"
+        "**/*.so",
+        "win/**",
+        "darwin/**",
+        "linux/**",
+        "net/**",
+        "org/**"
       )
     }
     jniLibs {
