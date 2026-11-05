@@ -1,0 +1,113 @@
+<resources>
+    <string name="app_name">Unpackr</string>
+    <string name="app_tagline">Universal Firmware &amp; Partition Image Unpacker</string>
+    <string name="app_description">Universal Android firmware unpacker and partition image extractor</string>
+
+    <!-- Navigation & Titles -->
+    <string name="nav_home">Home</string>
+    <string name="nav_detected">Firmware Inspector</string>
+    <string name="nav_extracting">Extracting Partitions</string>
+    <string name="nav_result">Extraction Summary</string>
+    <string name="nav_unsupported">Unsupported Container</string>
+    <string name="nav_settings">Settings &amp; About</string>
+
+    <!-- Home Screen -->
+    <string name="home_hero_title">Universal Android Firmware Unpacker</string>
+    <string name="home_hero_subtitle">Extract flashable partition images directly on your device with high performance and reliability.</string>
+    <string name="home_pick_local_button">Open Local Archive</string>
+    <string name="home_pick_local_caption">Supports OTA ZIP, payload.bin, fastboot ROM, .tar.md5, sparse .img</string>
+    <string name="home_url_button">Inspect Remote Download URL</string>
+    <string name="home_url_dialog_title">Inspect Direct Firmware URL</string>
+    <string name="home_url_dialog_desc">Enter a direct download link to an OTA package or factory image. Unpackr will inspect the archive remotely via HTTP Range requests without requiring a full multi-gigabyte download.</string>
+    <string name="home_url_placeholder">https://example.com/firmware.zip</string>
+    <string name="home_url_submit">Inspect URL</string>
+    <string name="home_url_cancel">Cancel</string>
+    <string name="home_recent_files">Recent Archives</string>
+    <string name="home_no_recent">No archives opened yet</string>
+    <string name="home_supported_formats">Supported Standards &amp; Containers</string>
+    <string name="home_format_payload">Android A/B Payload (CrAU v2)</string>
+    <string name="home_format_sparse">Android Sparse Format (libsparse)</string>
+    <string name="home_format_super">Dynamic Partitions (liblp super.img)</string>
+    <string name="home_format_fastboot">Fastboot Factory Archives (ZIP / TAR)</string>
+    <string name="home_format_newdat">Block Image Transfer (system.new.dat.br)</string>
+    <string name="home_format_samsung">Samsung Binary Archive (AP/BL TAR.MD5)</string>
+
+    <!-- Detected Screen -->
+    <string name="detected_title">Archive Inspector</string>
+    <string name="detected_format">Detected Container</string>
+    <string name="detected_confidence">Confidence</string>
+    <string name="detected_brand_device">Platform / Device</string>
+    <string name="detected_build">Build Descriptor</string>
+    <string name="detected_security_patch">Security Patch</string>
+    <string name="detected_partitions_header">Partitions (%1$d found)</string>
+    <string name="detected_search_placeholder">Filter partitions (e.g., boot, vbmeta, super)...</string>
+    <string name="detected_select_all">Select All</string>
+    <string name="detected_deselect_all">Clear Selection</string>
+    <string name="detected_shortcuts">Presets:</string>
+    <string name="detected_shortcut_common">Core Flashable (Boot / Recovery / VBMeta)</string>
+    <string name="detected_shortcut_system">System &amp; Dynamic</string>
+    <string name="detected_selected_count">%1$d of %2$d selected (%3$s)</string>
+    <string name="detected_start_button">Extract Selected Images</string>
+    <string name="detected_options_button">Engine Settings</string>
+
+    <!-- Options Bottom Sheet -->
+    <string name="options_title">Extraction Configuration</string>
+    <string name="options_verify_hash">Verify SHA-256 Hashes</string>
+    <string name="options_verify_hash_desc">Validate block-level and partition digests against archive manifests</string>
+    <string name="options_strict_mode">Strict Verification Mode</string>
+    <string name="options_strict_mode_desc">Abort extraction immediately if cryptographic hashes are missing or invalid</string>
+    <string name="options_sanity_check">Output Sanity Check</string>
+    <string name="options_sanity_check_desc">Prevent saving empty or all-zero image blocks</string>
+    <string name="options_sparse_to_raw">Convert Sparse to Flashable Raw</string>
+    <string name="options_sparse_to_raw_desc">De-sparse Android chunked images into raw block-aligned binary files</string>
+    <string name="options_parallelism">Worker Threads</string>
+    <string name="options_parallelism_desc">%1$d concurrent workers (Max: 8)</string>
+    <string name="options_save_button">Apply Configuration</string>
+
+    <!-- Extraction Screen & Service -->
+    <string name="extract_title">Extracting Images…</string>
+    <string name="extract_partition_progress">Writing %1$s (%2$d of %3$d)</string>
+    <string name="extract_overall_progress">Total Progress: %1$d%%</string>
+    <string name="extract_speed">Throughput: %1$s/s</string>
+    <string name="extract_eta">ETA: %1$s</string>
+    <string name="extract_verifying">Computing SHA-256 verification digest…</string>
+    <string name="extract_cancel_button">Cancel Extraction</string>
+    <string name="extract_cancel_confirm_title">Abort Extraction?</string>
+    <string name="extract_cancel_confirm_msg">Partially written files will be cleaned up automatically to avoid corrupt image artifacts.</string>
+    <string name="extract_keep_going">Resume</string>
+    <string name="extract_confirm_cancel">Abort &amp; Clean Up</string>
+
+    <!-- Result Screen -->
+    <string name="result_title">Extraction Complete</string>
+    <string name="result_subtitle">%1$d partition images generated in %2$s.</string>
+    <string name="result_failed_notice">%1$d partition(s) encountered I/O or verification errors.</string>
+    <string name="result_sha256_label">SHA-256:</string>
+    <string name="result_copy_hash">Copy Digest</string>
+    <string name="result_hash_copied">SHA-256 digest copied to clipboard</string>
+    <string name="result_share">Share</string>
+    <string name="result_done_button">Return to Dashboard</string>
+
+    <!-- Unsupported / Encrypted Screen -->
+    <string name="unsupported_title">Unsupported Container</string>
+    <string name="unsupported_why_title">Technical Cause</string>
+    <string name="unsupported_details_title">Container Diagnostics:</string>
+    <string name="unsupported_recommendation_title">Recommended Remediation:</string>
+    <string name="unsupported_back_button">Select Another Archive</string>
+
+    <!-- Settings & About Screen -->
+    <string name="settings_title">Settings &amp; Engine Details</string>
+    <string name="settings_group_about">Unpackr Engine Architecture</string>
+    <string name="settings_version">Version 1.0.0</string>
+    <string name="settings_disclaimer_title">Safety Disclaimer</string>
+    <string name="settings_disclaimer_text">Images extracted with Unpackr are intended for research, device recovery, and developer testing. Always verify partition SHA-256 digests prior to flashing to your device partition tables.</string>
+    <string name="settings_licenses_title">Open Source Components &amp; Specifications</string>
+    <string name="settings_copy_log">Copy System Diagnostics</string>
+    <string name="settings_log_copied">System diagnostics copied to clipboard</string>
+
+    <!-- Notifications -->
+    <string name="notification_channel_name">Firmware Extraction Worker</string>
+    <string name="notification_channel_desc">Shows active firmware partition unpacking and block writing progress</string>
+    <string name="notification_extracting_title">Unpacking partition images…</string>
+    <string name="notification_completed_title">Extraction Complete</string>
+    <string name="notification_failed_title">Extraction Failed</string>
+</resources>

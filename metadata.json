@@ -1,0 +1,6 @@
+{
+  "name": "Unpackr",
+  "description": "Universal firmware & partition image unpacker for Android supporting payload.bin, sparse images, super.img, fastboot ZIP, system.new.dat, and Samsung tar archives.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
