@@ -48,6 +48,10 @@
     <string name="detected_shortcut_system">System &amp; Dynamic</string>
     <string name="detected_selected_count">%1$d of %2$d selected (%3$s)</string>
     <string name="detected_start_button">Extract Selected Images</string>
+    <string name="detected_download_full_rom">Unduh Full ROM Asli</string>
+    <string name="detected_download_full_rom_sub">Unduh berkas arsip utuh (%1$s) langsung ke folder Download</string>
+    <string name="detected_extract_selected_count">Ekstrak %1$d Partisi (%2$s)</string>
+    <string name="toast_download_rom_started">Mengunduh %1$s ke folder Download via sistem...</string>
     <string name="detected_options_button">Engine Settings</string>
 
     <!-- Options Bottom Sheet -->

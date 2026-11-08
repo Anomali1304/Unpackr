@@ -68,6 +68,10 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
 import kotlinx.coroutines.delay
 
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material3.FilledTonalButton
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun DetectedScreen(
@@ -75,6 +79,9 @@ fun DetectedScreen(
     match: FormatMatch,
     selectedPartitions: Set<String>,
     searchQuery: String,
+    isRemoteUrl: Boolean = false,
+    remoteFileName: String? = null,
+    remoteFileSize: Long = 0L,
     onSearchQueryChange: (String) -> Unit,
     onTogglePartition: (String) -> Unit,
     onSelectAll: () -> Unit,
@@ -83,6 +90,7 @@ fun DetectedScreen(
     onSelectSystem: () -> Unit,
     onOptionsClick: () -> Unit,
     onStartExtraction: () -> Unit,
+    onDownloadFullRom: () -> Unit = {},
     onBack: () -> Unit
 ) {
     val filteredPartitions = info.partitions.filter {
@@ -92,6 +100,9 @@ fun DetectedScreen(
     val selectedSizeTotal = info.partitions
         .filter { selectedPartitions.contains(it.name) }
         .sumOf { it.size }
+
+    val isAllSelected = selectedPartitions.size == info.partitions.size
+    val isFullRomAction = isRemoteUrl && isAllSelected
 
     Scaffold(
         topBar = {
@@ -134,12 +145,20 @@ fun DetectedScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "${selectedPartitions.size} of ${info.partitions.size} selected",
+                            text = if (isFullRomAction) {
+                                stringResource(R.string.detected_download_full_rom)
+                            } else {
+                                "${selectedPartitions.size} of ${info.partitions.size} selected"
+                            },
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = formatBytes(selectedSizeTotal),
+                            text = if (isFullRomAction) {
+                                "${formatBytes(remoteFileSize)} • Full Original ROM"
+                            } else {
+                                formatBytes(selectedSizeTotal)
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -155,7 +174,13 @@ fun DetectedScreen(
                     )
 
                     Button(
-                        onClick = onStartExtraction,
+                        onClick = {
+                            if (isFullRomAction) {
+                                onDownloadFullRom()
+                            } else {
+                                onStartExtraction()
+                            }
+                        },
                         enabled = selectedPartitions.isNotEmpty(),
                         modifier = Modifier
                             .height(52.dp)
@@ -163,12 +188,22 @@ fun DetectedScreen(
                             .testTag("start_extraction_button"),
                         shape = RoundedCornerShape(20.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
+                            containerColor = if (isFullRomAction) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                            contentColor = if (isFullRomAction) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onPrimary
                         )
                     ) {
+                        Icon(
+                            imageVector = if (isFullRomAction) Icons.Default.Download else Icons.Default.FileDownload,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = stringResource(R.string.detected_start_button),
+                            text = if (isFullRomAction) {
+                                "Unduh Full ROM"
+                            } else {
+                                "Ekstrak (${selectedPartitions.size})"
+                            },
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
@@ -280,6 +315,54 @@ fun DetectedScreen(
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Quick Banner: Download Full Original ROM if remote
+            if (isRemoteUrl) {
+                item {
+                    ElevatedCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(22.dp),
+                        colors = CardDefaults.elevatedCardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(18.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.detected_download_full_rom),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = stringResource(R.string.detected_download_full_rom_sub, formatBytes(remoteFileSize)),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            FilledTonalButton(
+                                onClick = onDownloadFullRom,
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Unduh", fontWeight = FontWeight.Bold)
                             }
                         }
                     }

@@ -133,11 +133,16 @@ fun UnpackrApp(viewModel: UnpackrViewModel) {
                         viewModel.navigateTo(ScreenState.Home)
                     }
 
+                    val context = androidx.compose.ui.platform.LocalContext.current
+
                     DetectedScreen(
                         info = state.info,
                         match = state.match,
                         selectedPartitions = selectedPartitions,
                         searchQuery = searchQuery,
+                        isRemoteUrl = state.isRemoteUrl,
+                        remoteFileName = state.remoteFileName,
+                        remoteFileSize = state.remoteFileSize,
                         onSearchQueryChange = { viewModel.updateSearchQuery(it) },
                         onTogglePartition = { viewModel.togglePartition(it) },
                         onSelectAll = { viewModel.selectAll(state.info.partitions) },
@@ -146,6 +151,7 @@ fun UnpackrApp(viewModel: UnpackrViewModel) {
                         onSelectSystem = { viewModel.selectSystem(state.info.partitions) },
                         onOptionsClick = { showOptionsSheet = true },
                         onStartExtraction = { viewModel.startExtraction() },
+                        onDownloadFullRom = { viewModel.downloadFullRom(context) },
                         onBack = { viewModel.navigateTo(ScreenState.Home) }
                     )
 

@@ -36,7 +36,14 @@ import java.nio.ByteOrder
 
 sealed class ScreenState {
     data object Home : ScreenState()
-    data class Detected(val info: FirmwareInfo, val match: FormatMatch) : ScreenState()
+    data class Detected(
+        val info: FirmwareInfo,
+        val match: FormatMatch,
+        val isRemoteUrl: Boolean = false,
+        val remoteUrl: String? = null,
+        val remoteFileName: String? = null,
+        val remoteFileSize: Long = 0L
+    ) : ScreenState()
     data class Extracting(val currentPartition: String, val progress: Float, val speed: Long, val etaSeconds: Long) : ScreenState()
     data class Result(val successful: List<ExtractedFile>, val failed: Map<String, String>, val durationMs: Long) : ScreenState()
     data class Unsupported(val title: String, val reason: String, val solution: String, val technical: String?) : ScreenState()
@@ -230,7 +237,53 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
         )
         _recentItems.value = updatedRecents.take(5)
 
-        _screenState.value = ScreenState.Detected(info, match)
+        val isRemote = source is com.unpackr.engine.source.HttpFirmwareSource
+        val httpSource = source as? com.unpackr.engine.source.HttpFirmwareSource
+
+        _screenState.value = ScreenState.Detected(
+            info = info,
+            match = match,
+            isRemoteUrl = isRemote,
+            remoteUrl = httpSource?.url,
+            remoteFileName = httpSource?.fileName ?: fileName,
+            remoteFileSize = source.size
+        )
+    }
+
+    /**
+     * Downloads the original full ROM package directly from the remote link
+     * into the device's public Downloads directory using Android DownloadManager.
+     */
+    fun downloadFullRom(context: Context) {
+        val httpSource = currentSource as? com.unpackr.engine.source.HttpFirmwareSource
+        if (httpSource == null) {
+            android.widget.Toast.makeText(context, "Berkas ini bukan dari tautan unduhan online.", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        try {
+            val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+            val request = android.app.DownloadManager.Request(Uri.parse(httpSource.url))
+                .setTitle(httpSource.fileName)
+                .setDescription("Mengunduh arsip ROM asli...")
+                .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, httpSource.fileName)
+                .setAllowedOverMetered(true)
+                .setAllowedOverRoaming(true)
+
+            downloadManager.enqueue(request)
+            android.widget.Toast.makeText(
+                context,
+                "Mengunduh ${httpSource.fileName} ke folder Download via sistem...",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(
+                context,
+                "Gagal memulai unduhan: ${e.message}",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     fun startExtraction() {
