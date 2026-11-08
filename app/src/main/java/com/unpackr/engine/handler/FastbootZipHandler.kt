@@ -37,9 +37,7 @@ class FastbootZipHandler : FirmwareHandler {
     )
 
     private fun isZip(src: FirmwareSource): Boolean {
-        if (src.size < 4) return false
-        val magic = src.readIntLe(0)
-        return magic == 0x04034B50
+        return com.unpackr.engine.zip.ZipReader.isZip(src)
     }
 
     override fun probe(src: FirmwareSource): FormatMatch? {
@@ -69,47 +67,27 @@ class FastbootZipHandler : FirmwareHandler {
     private fun listZipImageEntries(src: FirmwareSource): List<ZipImageEntry> {
         val results = mutableListOf<ZipImageEntry>()
         try {
-            // Seekable archive access via commons-compress or zip directory scan
-            val eocdOffset = findZipEocd(src) ?: return emptyList()
-            val cdOffset = src.readIntLe(eocdOffset + 16).toLong() and 0xFFFFFFFFL
-            val cdEntries = src.readShortLe(eocdOffset + 10).toInt() and 0xFFFF
-
-            var pos = cdOffset
+            val entries = com.unpackr.engine.zip.ZipReader.listEntries(src)
             val nestedZipCandidates = mutableListOf<Pair<String, Long>>()
 
-            for (i in 0 until cdEntries) {
-                if (pos + 46 > src.size) break
-                val sig = src.readIntLe(pos)
-                if (sig != 0x02014B50) break
-
-                val uncompSize = src.readIntLe(pos + 24).toLong() and 0xFFFFFFFFL
-                val nameLen = src.readShortLe(pos + 28).toInt() and 0xFFFF
-                val extraLen = src.readShortLe(pos + 30).toInt() and 0xFFFF
-                val commentLen = src.readShortLe(pos + 32).toInt() and 0xFFFF
-
-                val nameBytes = src.readBytes(pos + 46, nameLen)
-                val rawName = String(nameBytes, Charsets.UTF_8)
-                val cleanName = rawName.substringAfterLast('/')
+            for (entry in entries) {
+                val cleanName = entry.name.substringAfterLast('/')
 
                 if (IMAGE_EXTENSIONS.any { cleanName.endsWith(it, ignoreCase = true) }) {
                     results.add(
                         ZipImageEntry(
-                            entryName = rawName,
+                            entryName = entry.name,
                             partitionName = cleanName,
-                            size = uncompSize,
+                            size = entry.uncompressedSize,
                             isNested = false
                         )
                     )
                 } else if (cleanName.startsWith("image-", ignoreCase = true) && cleanName.endsWith(".zip", ignoreCase = true)) {
-                    nestedZipCandidates.add(Pair(rawName, uncompSize))
+                    nestedZipCandidates.add(Pair(entry.name, entry.uncompressedSize))
                 }
-
-                pos += 46 + nameLen + extraLen + commentLen
             }
 
-            // If Pixel factory images (e.g. image-oriole-tp1a.zip), inspect nested entries
             for ((nestedName, _) in nestedZipCandidates) {
-                // If direct .img entries are already plentiful, no need; otherwise note nested images
                 if (results.isEmpty()) {
                     results.add(
                         ZipImageEntry(
@@ -123,24 +101,6 @@ class FastbootZipHandler : FirmwareHandler {
             }
         } catch (_: Exception) {}
         return results
-    }
-
-    private fun findZipEocd(src: FirmwareSource): Long? {
-        val maxSearch = 65536L + 22L
-        val searchStart = (src.size - maxSearch).coerceAtLeast(0L)
-        val searchLen = (src.size - searchStart).toInt()
-        val buffer = src.readBytes(searchStart, searchLen)
-
-        for (i in searchLen - 22 downTo 0) {
-            if (buffer[i] == 0x50.toByte() &&
-                buffer[i + 1] == 0x4B.toByte() &&
-                buffer[i + 2] == 0x05.toByte() &&
-                buffer[i + 3] == 0x06.toByte()
-            ) {
-                return searchStart + i
-            }
-        }
-        return null
     }
 
     override suspend fun inspect(src: FirmwareSource): FirmwareInfo {
@@ -186,116 +146,95 @@ class FastbootZipHandler : FirmwareHandler {
         val successful = mutableListOf<ExtractedFile>()
         val failed = mutableMapOf<String, String>()
 
-        // Write seekable temp file or stream from source
-        val eocdOffset = findZipEocd(src) ?: throw IllegalStateException("ZIP End of Central Directory (EOCD) record not found")
-        val cdOffset = src.readIntLe(eocdOffset + 16).toLong() and 0xFFFFFFFFL
-        val cdEntries = src.readShortLe(eocdOffset + 10).toInt() and 0xFFFF
-
-        var pos = cdOffset
+        // Query Central Directory via ZipReader (supporting standard ZIP and Zip64)
+        val allEntries = com.unpackr.engine.zip.ZipReader.listEntries(src).associateBy { it.name }
         var processedCount = 0
 
-        for (i in 0 until cdEntries) {
-            if (pos + 46 > src.size) break
-            val sig = src.readIntLe(pos)
-            if (sig != 0x02014B50) break
+        for (item in toExtract) {
+            val entry = allEntries[item.entryName] ?: continue
+            processedCount++
+            val cleanName = item.partitionName
+            val outFile = File(outputDir, cleanName)
+            emit(ExtractionEvent.PartitionStarted(cleanName, processedCount, total, entry.uncompressedSize))
 
-            val method = src.readShortLe(pos + 10).toInt() and 0xFFFF
-            val compSize = src.readIntLe(pos + 20).toLong() and 0xFFFFFFFFL
-            val uncompSize = src.readIntLe(pos + 24).toLong() and 0xFFFFFFFFL
-            val nameLen = src.readShortLe(pos + 28).toInt() and 0xFFFF
-            val extraLen = src.readShortLe(pos + 30).toInt() and 0xFFFF
-            val commentLen = src.readShortLe(pos + 32).toInt() and 0xFFFF
-            val localOffset = src.readIntLe(pos + 42).toLong() and 0xFFFFFFFFL
+            val digest = MessageDigest.getInstance("SHA-256")
+            var bytesWritten = 0L
+            var lastSpeedCalcTime = System.currentTimeMillis()
+            var bytesSinceLastSpeedCalc = 0L
 
-            val rawName = String(src.readBytes(pos + 46, nameLen), Charsets.UTF_8)
-            val cleanName = rawName.substringAfterLast('/')
-
-            val matchedEntry = toExtract.firstOrNull { it.entryName == rawName }
-            if (matchedEntry != null) {
-                processedCount++
-                val outFile = File(outputDir, cleanName)
-                emit(ExtractionEvent.PartitionStarted(cleanName, processedCount, total, uncompSize))
-
-                val digest = MessageDigest.getInstance("SHA-256")
-                var bytesWritten = 0L
-                var lastSpeedCalcTime = System.currentTimeMillis()
-                var bytesSinceLastSpeedCalc = 0L
-
-                try {
-                    // Safe write with anti-zip-slip
-                    if (cleanName.contains("..") || cleanName.startsWith("/")) {
-                        throw SecurityException("Potential path traversal detected in archive entry: $cleanName")
-                    }
-
-                    val localNameLen = src.readShortLe(localOffset + 26).toInt() and 0xFFFF
-                    val localExtraLen = src.readShortLe(localOffset + 28).toInt() and 0xFFFF
-                    val dataStart = localOffset + 30 + localNameLen + localExtraLen
-
-                    val rawIn = object : InputStream() {
-                        var current = dataStart
-                        val end = dataStart + compSize
-                        override fun read(): Int {
-                            if (current >= end) return -1
-                            val b = src.readBytes(current, 1)
-                            current++
-                            return b[0].toInt() and 0xFF
-                        }
-                        override fun read(b: ByteArray, off: Int, len: Int): Int {
-                            if (current >= end) return -1
-                            val toRead = ((end - current).coerceAtMost(len.toLong())).toInt()
-                            src.readFully(current, b, off, toRead)
-                            current += toRead
-                            return toRead
-                        }
-                    }
-
-                    val streamToRead: InputStream = if (method == 0) {
-                        rawIn
-                    } else {
-                        java.util.zip.InflaterInputStream(rawIn, java.util.zip.Inflater(true))
-                    }
-
-                    outFile.outputStream().use { outStream ->
-                        val buffer = ByteArray(64 * 1024)
-                        var read: Int
-                        while (streamToRead.read(buffer).also { read = it } != -1) {
-                            outStream.write(buffer, 0, read)
-                            digest.update(buffer, 0, read)
-                            bytesWritten += read
-                            bytesSinceLastSpeedCalc += read
-
-                            val now = System.currentTimeMillis()
-                            if (now - lastSpeedCalcTime >= 400) {
-                                val speed = (bytesSinceLastSpeedCalc * 1000L) / (now - lastSpeedCalcTime).coerceAtLeast(1)
-                                bytesSinceLastSpeedCalc = 0L
-                                lastSpeedCalcTime = now
-                                val fraction = (bytesWritten.toFloat() / uncompSize.coerceAtLeast(1L)).coerceIn(0f, 1f)
-                                emit(
-                                    ExtractionEvent.BytesWritten(
-                                        partition = cleanName,
-                                        currentBytes = bytesWritten,
-                                        totalBytes = uncompSize,
-                                        speedBytesPerSec = speed,
-                                        overallProgressFraction = ((processedCount - 1 + fraction) / total).coerceIn(0f, 1f)
-                                    )
-                                )
-                            }
-                        }
-                    }
-
-                    val sha256Hex = digest.digest().joinToString("") { "%02x".format(it) }
-                    emit(ExtractionEvent.PartitionVerified(cleanName, sha256Hex, true))
-                    emit(ExtractionEvent.PartitionFinished(cleanName, outFile.absolutePath, outFile.length(), sha256Hex))
-                    successful.add(ExtractedFile(cleanName, outFile, outFile.length(), sha256Hex))
-
-                } catch (e: Exception) {
-                    outFile.delete()
-                    emit(ExtractionEvent.PartitionFailed(cleanName, e.message ?: "Failed to extract partition image from ZIP"))
-                    failed[cleanName] = e.message ?: "Failed to extract partition image from ZIP"
+            try {
+                // Safe write with anti-zip-slip
+                if (cleanName.contains("..") || cleanName.startsWith("/")) {
+                    throw SecurityException("Potential path traversal detected in archive entry: $cleanName")
                 }
-            }
 
-            pos += 46 + nameLen + extraLen + commentLen
+                val dataStart = com.unpackr.engine.zip.ZipReader.getDataOffset(src, entry)
+                val compSize = entry.compressedSize
+                val uncompSize = entry.uncompressedSize
+                val method = entry.method
+
+                val rawIn = object : InputStream() {
+                    var current = dataStart
+                    val end = dataStart + compSize
+                    override fun read(): Int {
+                        if (current >= end) return -1
+                        val b = src.readBytes(current, 1)
+                        current++
+                        return b[0].toInt() and 0xFF
+                    }
+                    override fun read(b: ByteArray, off: Int, len: Int): Int {
+                        if (current >= end) return -1
+                        val toRead = ((end - current).coerceAtMost(len.toLong())).toInt()
+                        src.readFully(current, b, off, toRead)
+                        current += toRead
+                        return toRead
+                    }
+                }
+
+                val streamToRead: InputStream = if (method == 0) {
+                    rawIn
+                } else {
+                    java.util.zip.InflaterInputStream(rawIn, java.util.zip.Inflater(true))
+                }
+
+                outFile.outputStream().use { outStream ->
+                    val buffer = ByteArray(64 * 1024)
+                    var read: Int
+                    while (streamToRead.read(buffer).also { read = it } != -1) {
+                        outStream.write(buffer, 0, read)
+                        digest.update(buffer, 0, read)
+                        bytesWritten += read
+                        bytesSinceLastSpeedCalc += read
+
+                        val now = System.currentTimeMillis()
+                        if (now - lastSpeedCalcTime >= 400) {
+                            val speed = (bytesSinceLastSpeedCalc * 1000L) / (now - lastSpeedCalcTime).coerceAtLeast(1)
+                            bytesSinceLastSpeedCalc = 0L
+                            lastSpeedCalcTime = now
+                            val fraction = (bytesWritten.toFloat() / uncompSize.coerceAtLeast(1L)).coerceIn(0f, 1f)
+                            emit(
+                                ExtractionEvent.BytesWritten(
+                                    partition = cleanName,
+                                    currentBytes = bytesWritten,
+                                    totalBytes = uncompSize,
+                                    speedBytesPerSec = speed,
+                                    overallProgressFraction = ((processedCount - 1 + fraction) / total).coerceIn(0f, 1f)
+                                )
+                            )
+                        }
+                    }
+                }
+
+                val sha256Hex = digest.digest().joinToString("") { "%02x".format(it) }
+                emit(ExtractionEvent.PartitionVerified(cleanName, sha256Hex, true))
+                emit(ExtractionEvent.PartitionFinished(cleanName, outFile.absolutePath, outFile.length(), sha256Hex))
+                successful.add(ExtractedFile(cleanName, outFile, outFile.length(), sha256Hex))
+
+            } catch (e: Exception) {
+                outFile.delete()
+                emit(ExtractionEvent.PartitionFailed(cleanName, e.message ?: "Failed to extract partition image from ZIP"))
+                failed[cleanName] = e.message ?: "Failed to extract partition image from ZIP"
+            }
         }
 
         val totalDuration = System.currentTimeMillis() - startTime

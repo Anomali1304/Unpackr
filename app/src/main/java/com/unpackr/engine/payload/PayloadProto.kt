@@ -49,13 +49,14 @@ enum class InstallOpType(val value: Int) {
     BSDIFF(3),
     SOURCE_COPY(4),
     SOURCE_BSDIFF(5),
-    REPLACE_XZ(6),
-    ZERO(7),
-    DISCARD(8),
-    REPLACE_ZSTD(9),
+    ZERO(6),
+    DISCARD(7),
+    REPLACE_XZ(8),
+    DIFF(9),
     PUFFDIFF(10),
     ZUCCHINI(11),
     LZ4DIFF(12),
+    REPLACE_ZSTD(13),
     UNKNOWN(-1);
 
     companion object {
@@ -165,17 +166,42 @@ object DeltaManifestParser {
             val tag = stream.readTag()
             if (tag == 0) break
             val fieldNumber = tag ushr 3
+            val wireType = tag and 7
             when (fieldNumber) {
                 3 -> blockSize = stream.readVarint64()
                 4 -> {
-                    val subBytes = stream.readBytes()
-                    partitions.add(parsePartitionUpdate(subBytes))
+                    if (wireType == 2) {
+                        val subBytes = stream.readBytes()
+                        partitions.add(parsePartitionUpdate(subBytes))
+                    } else {
+                        stream.skipField(tag)
+                    }
                 }
-                10 -> {
-                    val subBytes = stream.readBytes()
-                    groups.addAll(parseDynamicPartitionMetadata(subBytes))
+                10, 14, 15 -> {
+                    if (wireType == 2) {
+                        try {
+                            val subBytes = stream.readBytes()
+                            groups.addAll(parseDynamicPartitionMetadata(subBytes))
+                        } catch (_: Exception) {}
+                    } else {
+                        stream.skipField(tag)
+                    }
                 }
-                13 -> securityPatch = stream.readString()
+                13 -> {
+                    if (wireType == 2) {
+                        val subBytes = stream.readBytes()
+                        partitions.add(parsePartitionUpdate(subBytes))
+                    } else {
+                        stream.skipField(tag)
+                    }
+                }
+                18 -> {
+                    if (wireType == 2) {
+                        securityPatch = stream.readString()
+                    } else {
+                        stream.skipField(tag)
+                    }
+                }
                 else -> stream.skipField(tag)
             }
         }
@@ -202,7 +228,16 @@ object DeltaManifestParser {
                 1 -> name = stream.readString()
                 4 -> oldInfo = parsePartitionInfo(stream.readBytes())
                 5 -> newInfo = parsePartitionInfo(stream.readBytes())
-                6 -> operations.add(parseInstallOperation(stream.readBytes()))
+                6 -> {
+                    val sub = stream.readBytes()
+                    try {
+                        operations.add(parseInstallOperation(sub))
+                    } catch (_: Exception) {
+                        oldInfo = parsePartitionInfo(sub)
+                    }
+                }
+                7 -> newInfo = parsePartitionInfo(stream.readBytes())
+                8 -> operations.add(parseInstallOperation(stream.readBytes()))
                 else -> stream.skipField(tag)
             }
         }
@@ -239,15 +274,45 @@ object DeltaManifestParser {
         while (stream.hasMore()) {
             val tag = stream.readTag()
             if (tag == 0) break
-            when (tag ushr 3) {
+            val fieldNumber = tag ushr 3
+            val wireType = tag and 7
+            when (fieldNumber) {
                 1 -> type = InstallOpType.fromValue(stream.readVarint32())
                 2 -> dataOffset = stream.readVarint64()
                 3 -> dataLength = stream.readVarint64()
                 4 -> srcExtents.add(parseExtent(stream.readBytes()))
-                5 -> dstExtents.add(parseExtent(stream.readBytes()))
-                6 -> dataHash = stream.readBytes()
-                7 -> srcLength = stream.readVarint64()
-                8 -> dstLength = stream.readVarint64()
+                5 -> {
+                    if (wireType == 0) {
+                        srcLength = stream.readVarint64()
+                    } else if (wireType == 2) {
+                        dstExtents.add(parseExtent(stream.readBytes()))
+                    } else {
+                        stream.skipField(tag)
+                    }
+                }
+                6 -> {
+                    if (wireType == 2) {
+                        dstExtents.add(parseExtent(stream.readBytes()))
+                    } else {
+                        stream.skipField(tag)
+                    }
+                }
+                7 -> {
+                    if (wireType == 0) {
+                        dstLength = stream.readVarint64()
+                    } else {
+                        stream.skipField(tag)
+                    }
+                }
+                8 -> {
+                    if (wireType == 2) {
+                        dataHash = stream.readBytes()
+                    } else if (wireType == 0) {
+                        dstLength = stream.readVarint64()
+                    } else {
+                        stream.skipField(tag)
+                    }
+                }
                 else -> stream.skipField(tag)
             }
         }

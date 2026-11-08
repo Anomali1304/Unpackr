@@ -38,6 +38,10 @@ class HttpFirmwareSource(
     private var tailCache: ByteArray? = null
     private var tailOffset: Long = -1L
 
+    private var rollingCache: ByteArray? = null
+    private var rollingOffset: Long = -1L
+    private val PREFETCH_SIZE = 512 * 1024 // 512 KB prefetch buffer
+
     init {
         // Probe file size and fetch the first chunk (HEAD cache) in one go
         val headProbeReq = Request.Builder()
@@ -105,9 +109,9 @@ class HttpFirmwareSource(
         if (lengthToRead <= 0) return 0
 
         // 1. Check head cache
-        if (headCache != null && position < CACHE_SIZE) {
+        if (headCache != null && position < headCache!!.size) {
             val offsetInCache = position.toInt()
-            val availableInCache = (CACHE_SIZE - offsetInCache).coerceAtMost(lengthToRead)
+            val availableInCache = (headCache!!.size - offsetInCache).coerceAtMost(lengthToRead)
             if (availableInCache > 0) {
                 dst.put(headCache!!, offsetInCache, availableInCache)
                 return availableInCache
@@ -115,7 +119,7 @@ class HttpFirmwareSource(
         }
 
         // 2. Check tail cache
-        if (tailCache != null && position >= tailOffset) {
+        if (tailCache != null && position >= tailOffset && position < tailOffset + tailCache!!.size) {
             val offsetInCache = (position - tailOffset).toInt()
             val availableInCache = (tailCache!!.size - offsetInCache).coerceAtMost(lengthToRead)
             if (availableInCache > 0) {
@@ -124,8 +128,20 @@ class HttpFirmwareSource(
             }
         }
 
-        // 3. Fallback to network request
-        val endPosition = position + lengthToRead - 1
+        // 3. Check rolling cache
+        if (rollingCache != null && position >= rollingOffset && position < rollingOffset + rollingCache!!.size) {
+            val offsetInCache = (position - rollingOffset).toInt()
+            val availableInCache = (rollingCache!!.size - offsetInCache).coerceAtMost(lengthToRead)
+            if (availableInCache > 0) {
+                dst.put(rollingCache!!, offsetInCache, availableInCache)
+                return availableInCache
+            }
+        }
+
+        // 4. Network request with smart prefetch
+        val fetchSize = maxOf(lengthToRead, PREFETCH_SIZE).toLong().coerceAtMost(size - position).toInt()
+        val endPosition = position + fetchSize - 1
+
         val req = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
@@ -136,10 +152,15 @@ class HttpFirmwareSource(
             if (!resp.isSuccessful && resp.code != 206) {
                 throw IOException("Range request failed: HTTP ${resp.code}")
             }
-            val body = resp.body ?: throw IOException("Empty body")
+            val body = resp.body ?: throw IOException("Empty response body")
             val bytes = body.bytes()
-            dst.put(bytes)
-            return bytes.size
+            
+            rollingCache = bytes
+            rollingOffset = position
+
+            val toDeliver = lengthToRead.coerceAtMost(bytes.size)
+            dst.put(bytes, 0, toDeliver)
+            return toDeliver
         }
     }
 

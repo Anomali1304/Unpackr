@@ -1,6 +1,7 @@
 package com.unpackr.engine.detector
 
 import com.unpackr.engine.handler.AbPayloadHandler
+import com.unpackr.engine.handler.FastbootTarHandler
 import com.unpackr.engine.handler.FastbootZipHandler
 import com.unpackr.engine.handler.FirmwareHandler
 import com.unpackr.engine.handler.NewDatHandler
@@ -22,6 +23,7 @@ class FormatDetector(
             SparseImageHandler(),
             SuperImageHandler(),
             SamsungTarHandler(),
+            FastbootTarHandler(),
             NewDatHandler(),
             FastbootZipHandler()
         )

@@ -93,77 +93,21 @@ class AbPayloadHandler : FirmwareHandler {
             )
         }
 
-        // Check if ZIP containing payload.bin
-        if (src.size > 30 && src.readIntLe(0) == 0x04034B50) {
-            // It is a ZIP file; we probe for payload.bin entry
-            val found = probeZipForPayload(src)
-            if (found != null) {
-                return found
+        // Check if ZIP containing payload.bin (standard ZIP or ZIP64)
+        if (com.unpackr.engine.zip.ZipReader.isZip(src)) {
+            val entries = com.unpackr.engine.zip.ZipReader.listEntries(src)
+            val payloadEntry = entries.firstOrNull { it.name == "payload.bin" }
+            if (payloadEntry != null) {
+                val isStored = (payloadEntry.method == 0)
+                return FormatMatch(
+                    handler = this,
+                    confidence = 0.98f,
+                    formatName = "Android OTA Zip (A/B Payload)",
+                    details = "OTA ZIP archive with payload.bin (${payloadEntry.uncompressedSize / (1024 * 1024)} MB, compression: ${if (isStored) "STORED" else "DEFLATED"})"
+                )
             }
         }
 
-        return null
-    }
-
-    private fun probeZipForPayload(src: FirmwareSource): FormatMatch? {
-        try {
-            // Read end of central directory
-            val eocdOffset = findZipEocd(src) ?: return null
-            val cdOffset = src.readIntLe(eocdOffset + 16).toLong() and 0xFFFFFFFFL
-            val cdSize = src.readIntLe(eocdOffset + 12).toLong() and 0xFFFFFFFFL
-            val cdEntries = src.readShortLe(eocdOffset + 10).toInt() and 0xFFFF
-
-            if (cdSize > 10 * 1024 * 1024) return null // Safety: CD shouldn't be > 10MB
-
-            // Read the entire central directory into memory to minimize HTTP requests
-            val cdBuffer = src.readBytes(cdOffset, cdSize.toInt())
-            val cdSource = ByteArraySource(cdBuffer)
-
-            var pos = 0L
-            for (i in 0 until cdEntries) {
-                if (pos + 46 > cdSize) break
-                val sig = cdSource.readIntLe(pos)
-                if (sig != 0x02014B50) break
-
-                val method = cdSource.readShortLe(pos + 10).toInt() and 0xFFFF
-                val uncompSize = cdSource.readIntLe(pos + 24).toLong() and 0xFFFFFFFFL
-                val nameLen = cdSource.readShortLe(pos + 28).toInt() and 0xFFFF
-                val extraLen = cdSource.readShortLe(pos + 30).toInt() and 0xFFFF
-                val commentLen = cdSource.readShortLe(pos + 32).toInt() and 0xFFFF
-
-                val entryName = String(cdSource.readBytes(pos + 46, nameLen), Charsets.UTF_8)
-
-                if (entryName == "payload.bin") {
-                    val isStored = (method == 0)
-                    return FormatMatch(
-                        handler = this,
-                        confidence = 0.98f,
-                        formatName = "Android OTA Zip (A/B Payload)",
-                        details = "OTA ZIP archive with payload.bin (${uncompSize / (1024 * 1024)} MB, compression: ${if (isStored) "STORED" else "DEFLATED"})"
-                    )
-                }
-
-                pos += 46 + nameLen + extraLen + commentLen
-            }
-        } catch (_: Exception) {}
-        return null
-    }
-
-    private fun findZipEocd(src: FirmwareSource): Long? {
-        val maxSearch = 65536L + 22L
-        val searchStart = (src.size - maxSearch).coerceAtLeast(0L)
-        val searchLen = (src.size - searchStart).toInt()
-        val buffer = src.readBytes(searchStart, searchLen)
-
-        for (i in searchLen - 22 downTo 0) {
-            if (buffer[i] == 0x50.toByte() &&
-                buffer[i + 1] == 0x4B.toByte() &&
-                buffer[i + 2] == 0x05.toByte() &&
-                buffer[i + 3] == 0x06.toByte()
-            ) {
-                return searchStart + i
-            }
-        }
         return null
     }
 
@@ -173,73 +117,54 @@ class AbPayloadHandler : FirmwareHandler {
             return Pair(src, false)
         }
 
-        // Try extracting or slicing payload.bin from ZIP
-        val eocdOffset = findZipEocd(src) ?: throw CorruptHeaderException("Source is neither a valid payload.bin nor an OTA ZIP archive")
-        val cdOffset = src.readIntLe(eocdOffset + 16).toLong() and 0xFFFFFFFFL
-        val cdEntries = src.readShortLe(eocdOffset + 10).toInt() and 0xFFFF
+        if (com.unpackr.engine.zip.ZipReader.isZip(src)) {
+            val entries = com.unpackr.engine.zip.ZipReader.listEntries(src)
+            val payloadEntry = entries.firstOrNull { it.name == "payload.bin" }
+                ?: throw CorruptHeaderException("payload.bin entry not found inside ZIP archive")
 
-        var pos = cdOffset
-        for (i in 0 until cdEntries) {
-            if (pos + 46 > src.size) break
-            val sig = src.readIntLe(pos)
-            if (sig != 0x02014B50) break
+            val dataStart = com.unpackr.engine.zip.ZipReader.getDataOffset(src, payloadEntry)
+            val uncompSize = payloadEntry.uncompressedSize
+            val compSize = payloadEntry.compressedSize
 
-            val method = src.readShortLe(pos + 10).toInt() and 0xFFFF
-            val compSize = src.readIntLe(pos + 20).toLong() and 0xFFFFFFFFL
-            val uncompSize = src.readIntLe(pos + 24).toLong() and 0xFFFFFFFFL
-            val nameLen = src.readShortLe(pos + 28).toInt() and 0xFFFF
-            val extraLen = src.readShortLe(pos + 30).toInt() and 0xFFFF
-            val commentLen = src.readShortLe(pos + 32).toInt() and 0xFFFF
-            val localOffset = src.readIntLe(pos + 42).toLong() and 0xFFFFFFFFL
-
-            val entryName = String(src.readBytes(pos + 46, nameLen), Charsets.UTF_8)
-            if (entryName == "payload.bin") {
-                // Local header: skip name and extra to get data offset
-                val localNameLen = src.readShortLe(localOffset + 26).toInt() and 0xFFFF
-                val localExtraLen = src.readShortLe(localOffset + 28).toInt() and 0xFFFF
-                val dataStart = localOffset + 30 + localNameLen + localExtraLen
-
-                if (method == 0) {
-                    // STORED! Zero copy slice directly
-                    return Pair(src.slice(dataStart, uncompSize), false)
-                } else {
-                    // DEFLATE: Stream to cache file
-                    val cDir = cacheDir ?: File(System.getProperty("java.io.tmpdir"), "unpackr_cache").apply { mkdirs() }
-                    if (cDir.usableSpace < uncompSize + 100 * 1024 * 1024) {
-                        throw OutOfSpaceException("Insufficient disk space to buffer payload.bin (${uncompSize / (1024 * 1024)} MB required)")
-                    }
-                    val cacheFile = File(cDir, "payload_${System.currentTimeMillis()}.bin")
-                    cacheFile.deleteOnExit()
-
-                    // Stream decompress deflated data
-                    val inStream = object : InputStream() {
-                        var current = dataStart
-                        val end = dataStart + compSize
-                        override fun read(): Int {
-                            if (current >= end) return -1
-                            val b = src.readBytes(current, 1)
-                            current++
-                            return b[0].toInt() and 0xFF
-                        }
-                        override fun read(b: ByteArray, off: Int, len: Int): Int {
-                            if (current >= end) return -1
-                            val toRead = ((end - current).coerceAtMost(len.toLong())).toInt()
-                            src.readFully(current, b, off, toRead)
-                            current += toRead
-                            return toRead
-                        }
-                    }
-                    val inflaterStream = java.util.zip.InflaterInputStream(inStream, java.util.zip.Inflater(true))
-                    cacheFile.outputStream().use { out ->
-                        inflaterStream.copyTo(out)
-                    }
-                    return Pair(FileChannelSource(cacheFile), true)
+            if (payloadEntry.method == 0) {
+                // STORED! Zero copy slice directly
+                return Pair(src.slice(dataStart, uncompSize), false)
+            } else {
+                // DEFLATE: Stream to cache file
+                val cDir = cacheDir ?: File(System.getProperty("java.io.tmpdir"), "unpackr_cache").apply { mkdirs() }
+                if (cDir.usableSpace < uncompSize + 100 * 1024 * 1024) {
+                    throw OutOfSpaceException("Insufficient disk space to buffer payload.bin (${uncompSize / (1024 * 1024)} MB required)")
                 }
+                val cacheFile = File(cDir, "payload_${System.currentTimeMillis()}.bin")
+                cacheFile.deleteOnExit()
+
+                // Stream decompress deflated data
+                val inStream = object : InputStream() {
+                    var current = dataStart
+                    val end = dataStart + compSize
+                    override fun read(): Int {
+                        if (current >= end) return -1
+                        val b = src.readBytes(current, 1)
+                        current++
+                        return b[0].toInt() and 0xFF
+                    }
+                    override fun read(b: ByteArray, off: Int, len: Int): Int {
+                        if (current >= end) return -1
+                        val toRead = ((end - current).coerceAtMost(len.toLong())).toInt()
+                        src.readFully(current, b, off, toRead)
+                        current += toRead
+                        return toRead
+                    }
+                }
+                val inflaterStream = java.util.zip.InflaterInputStream(inStream, java.util.zip.Inflater(true))
+                cacheFile.outputStream().use { out ->
+                    inflaterStream.copyTo(out)
+                }
+                return Pair(FileChannelSource(cacheFile), true)
             }
-            pos += 46 + nameLen + extraLen + commentLen
         }
 
-        throw CorruptHeaderException("payload.bin entry not found inside ZIP archive")
+        throw CorruptHeaderException("Source is neither a valid payload.bin nor an OTA ZIP archive")
     }
 
     override suspend fun inspect(src: FirmwareSource): FirmwareInfo {

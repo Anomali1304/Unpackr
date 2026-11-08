@@ -92,8 +92,8 @@ class NewDatHandler : FirmwareHandler {
     }
 
     override fun probe(src: FirmwareSource): FormatMatch? {
-        // Probe in ZIP or directory for *.transfer.list
-        if (src.size > 30 && src.readIntLe(0) == 0x04034B50) {
+        // Probe in ZIP or directory for *.transfer.list (supporting standard ZIP and Zip64)
+        if (com.unpackr.engine.zip.ZipReader.isZip(src)) {
             val listEntry = findTransferListEntry(src)
             if (listEntry != null) {
                 return FormatMatch(
@@ -108,42 +108,8 @@ class NewDatHandler : FirmwareHandler {
     }
 
     private fun findTransferListEntry(src: FirmwareSource): String? {
-        val maxSearch = 65536L + 22L
-        val searchStart = (src.size - maxSearch).coerceAtLeast(0L)
-        val searchLen = (src.size - searchStart).toInt()
-        val buffer = src.readBytes(searchStart, searchLen)
-
-        for (i in searchLen - 22 downTo 0) {
-            if (buffer[i] == 0x50.toByte() &&
-                buffer[i + 1] == 0x4B.toByte() &&
-                buffer[i + 2] == 0x05.toByte() &&
-                buffer[i + 3] == 0x06.toByte()
-            ) {
-                val eocd = searchStart + i
-                val cdOffset = src.readIntLe(eocd + 16).toLong() and 0xFFFFFFFFL
-                val cdEntries = src.readShortLe(eocd + 10).toInt() and 0xFFFF
-
-                var pos = cdOffset
-                for (j in 0 until cdEntries) {
-                    if (pos + 46 > src.size) break
-                    val sig = src.readIntLe(pos)
-                    if (sig != 0x02014B50) break
-
-                    val nameLen = src.readShortLe(pos + 28).toInt() and 0xFFFF
-                    val extraLen = src.readShortLe(pos + 30).toInt() and 0xFFFF
-                    val commentLen = src.readShortLe(pos + 32).toInt() and 0xFFFF
-
-                    val nameBytes = src.readBytes(pos + 46, nameLen)
-                    val rawName = String(nameBytes, Charsets.UTF_8)
-                    if (rawName.endsWith(".transfer.list", ignoreCase = true)) {
-                        return rawName
-                    }
-                    pos += 46 + nameLen + extraLen + commentLen
-                }
-                break
-            }
-        }
-        return null
+        val entries = com.unpackr.engine.zip.ZipReader.listEntries(src)
+        return entries.firstOrNull { it.name.endsWith(".transfer.list", ignoreCase = true) }?.name
     }
 
     override suspend fun inspect(src: FirmwareSource): FirmwareInfo {
