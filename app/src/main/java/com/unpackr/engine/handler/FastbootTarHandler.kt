@@ -148,6 +148,7 @@ class FastbootTarHandler : FirmwareHandler {
         val imageEntries = mutableListOf<TarImageEntry>()
 
         if (isCompressed) {
+            val isRemote = src is com.unpackr.engine.source.HttpFirmwareSource
             val inStream = createInputStream(src, 0, src.size)
             GzipCompressorInputStream(inStream).use { gzStream ->
                 val tarInput = TarArchiveInputStream(gzStream)
@@ -162,6 +163,14 @@ class FastbootTarHandler : FirmwareHandler {
                                 size = entry.size
                             )
                         )
+                        // If remote HTTP stream, stop early when encountering large partition images (super, cust, system, userdata)
+                        // to prevent downloading gigabytes of GZIP stream data during inspection alone.
+                        if (isRemote) {
+                            val lower = cleanName.lowercase()
+                            if (lower.startsWith("super") || lower.startsWith("cust") || lower.startsWith("userdata") || lower.startsWith("system") || entry.size > 250 * 1024 * 1024L) {
+                                break
+                            }
+                        }
                     }
                     entry = tarInput.nextTarEntry
                 }

@@ -9,11 +9,12 @@ It operates entirely in user-space with **zero native binary dependencies (`.so`
 ## Technical Highlights
 
 - **User-Space Sandbox & Zero Native Binaries**: Runs inside the standard Android application sandbox using high-performance NIO channels (`FileChannel`, `ByteBuffer`). Does not bundle compiled ELF binaries.
-- **HTTP Range Streaming**: Supports inspecting and extracting partitions directly from remote download URLs (e.g., official factory image links or mirrors) using HTTP `Range: bytes=start-end` requests. Eliminates the requirement to download 5–10 GB archives to local storage just to extract a 64 MB kernel image.
+- **HTTP Range Streaming & Full ROM Download**: Supports inspecting and extracting partitions directly from remote download URLs (e.g., official factory image links, Xiaomi OTA, or mirrors) using HTTP `Range: bytes=start-end` requests. Eliminates the requirement to download 5–10 GB archives to local storage just to extract a 64 MB kernel image. Also supports downloading the full original ROM directly to device storage.
 - **Selective Extraction**: Pick only the partitions you need (such as `boot.img` for patching or `vbmeta.img` for signing) instead of decompressing the entire multi-gigabyte package.
+- **ZIP64 & TGZ Stream Engine**: Fully compliant positional Zip64 Central Directory parser (>4GB archives) and stream-optimized Fastboot TGZ (`.tgz` / `.tar.gz`) decompressor.
 - **Cryptographic Verification**: Automatically verifies block-level and partition-level SHA-256 hashes against embedded manifests.
 - **Background Execution**: Long-running extraction tasks run inside an Android Foreground Service with wake locks and notification progress reporting.
-- **Modern Jetpack Compose UI**: Pure Material Design 3 interface designed for clarity, high density, and operational safety.
+- **Google Material You & Android 16 Fluid UI**: Pure Material Design 3 interface featuring authentic Google Material adaptive vector icons, dynamic Monet palette theme, and Android 16 fluid motion physics.
 
 ---
 
@@ -24,7 +25,8 @@ It operates entirely in user-space with **zero native binary dependencies (`.so`
 | **Android A/B Payload** | `CrAU` (v2), `payload.bin`, OTA ZIP | Custom Protobuf wire decoder (`update_metadata.proto`), extent-based block mapping, chunk decompression (LZ4, ZSTD, BZIP2, XZ), per-operation SHA-256 validation. |
 | **Android Sparse Images** | `0xED26FF3A` (`SPARSE_HEADER_MAGIC`) | Resolves `CHUNK_TYPE_RAW`, `CHUNK_TYPE_FILL`, and `CHUNK_TYPE_DONT_CARE`. Reconstructs standard unsparse raw block images. |
 | **Dynamic Partitions (`super.img`)** | `0x616C0D41` (`LP_METADATA_GEOMETRY_MAGIC`) | Parses `liblp` metadata tables, partition descriptor groups, and extent maps. Assembles contiguous or sparse logical partitions (`system`, `vendor`, `product`, `odm`, `system_ext`). |
-| **Fastboot Factory ZIP** | `PK\x03\x04` / `PK\x01\x02` (ZIP32/ZIP64) | Positional Central Directory parser with nested `image-*.zip` discovery and anti-Zip-Slip path traversal verification. |
+| **Fastboot Factory ZIP / ZIP64** | `PK\x03\x04` / `PK\x01\x02` (ZIP32/ZIP64) | Positional Zip64 Central Directory parser with nested `image-*.zip` discovery and anti-Zip-Slip path traversal verification. |
+| **Fastboot TGZ / TAR Archives** | `.tgz`, `.tar.gz`, POSIX USTAR | Stream-optimized GZIP decompressor and USTAR record parser with early-stop inspection to save network data. |
 | **Android Block OTA (`new.dat`)** | `*.transfer.list` + `system.new.dat[.br/.xz]` | Decodes transfer list commands (`new`, `erase`, `zero`), re-orders sparse block extents into linear disk images. |
 | **Samsung Binary Archives** | USTAR POSIX TAR (`.tar` / `.tar.md5`) | Parses 512-byte USTAR record headers and streams real-time LZ4 frame decompression (`.img.lz4`) directly to storage. |
 | **Proprietary Vendor Archives** | OFP (Oppo/Realme), OZIP, NB0, PAC | Diagnostic probe identifies format, displays technical explanation of vendor proprietary cipher requirements, and suggests standard desktop alternatives. |
@@ -92,16 +94,19 @@ unpackr/
 │       │   │   │   ├── Models.kt               # Partition definitions & event types
 │       │   │   │   ├── handler/                # Format extraction implementations
 │       │   │   │   │   ├── AbPayloadHandler.kt
+│       │   │   │   │   ├── FastbootTarHandler.kt
 │       │   │   │   │   ├── FastbootZipHandler.kt
 │       │   │   │   │   ├── NewDatHandler.kt
 │       │   │   │   │   ├── SamsungTarHandler.kt
 │       │   │   │   │   ├── SparseImageHandler.kt
 │       │   │   │   │   ├── SuperImageHandler.kt
 │       │   │   │   │   └── UnsupportedAndSpecializedHandlers.kt
-│       │   │   │   └── source/                 # IO source abstractions
-│       │   │   │       ├── FileChannelSource.kt
-│       │   │   │       ├── FirmwareSource.kt
-│       │   │   │       └── HttpFirmwareSource.kt
+│       │   │   │   ├── source/                 # IO source abstractions
+│       │   │   │   │   ├── FileChannelSource.kt
+│       │   │   │   │   ├── FirmwareSource.kt
+│       │   │   │   │   └── HttpFirmwareSource.kt
+│       │   │   │   └── zip/
+│       │   │   │       └── ZipReader.kt        # Positional ZIP32 & ZIP64 reader
 │       │   │   ├── service/
 │       │   │   │   └── ExtractionService.kt    # Foreground service worker
 │       │   │   └── ui/                         # Jetpack Compose UI
