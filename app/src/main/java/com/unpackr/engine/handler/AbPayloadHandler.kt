@@ -173,14 +173,20 @@ class AbPayloadHandler : FirmwareHandler {
             val header = parseHeader(payloadSrc)
                 ?: throw CorruptHeaderException("Invalid payload.bin header structure")
 
-            val partitions = header.manifest.partitions.map { part ->
+            val partitions = header.manifest.partitions.mapIndexed { index, part ->
                 val size = part.newPartitionInfo?.size ?: 0L
                 val hash = part.newPartitionInfo?.hashHex
-                val isCommon = COMMON_PARTITIONS.contains(part.partitionName.lowercase())
+                
+                val rawName = part.partitionName.trim().removePrefix(".")
+                val cleanPartName = if (rawName.isBlank() || rawName.all { it.isDigit() }) "partition_${index + 1}" else rawName
+                val displayName = if (cleanPartName.endsWith(".img", ignoreCase = true)) cleanPartName else "$cleanPartName.img"
+                val simpleName = displayName.removeSuffix(".img").lowercase()
+
+                val isCommon = COMMON_PARTITIONS.contains(simpleName)
                 val compressionTypes = part.operations.map { it.type.name }.distinct().joinToString(", ")
 
                 PartitionEntry(
-                    name = "${part.partitionName}.img",
+                    name = displayName,
                     size = size,
                     compression = if (compressionTypes.isBlank()) "None" else compressionTypes,
                     hashAvailable = (hash != null),

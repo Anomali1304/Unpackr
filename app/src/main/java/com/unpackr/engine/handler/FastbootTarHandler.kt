@@ -163,11 +163,11 @@ class FastbootTarHandler : FirmwareHandler {
                                 size = entry.size
                             )
                         )
-                        // On remote streams, after recording the first major partition (userdata/super/cust/system or >50MB),
-                        // stop decompression immediately so inspect is capped at ~55MB max data usage.
+                        // On remote streams, after recording a major system/data partition (userdata/super/cust/system or >300MB),
+                        // stop further stream decompression so inspect remains capped at ~55MB network data.
                         if (isRemote) {
                             val lower = cleanName.lowercase()
-                            if (lower.startsWith("super") || lower.startsWith("cust") || lower.startsWith("userdata") || lower.startsWith("system") || entry.size > 50 * 1024 * 1024L) {
+                            if (lower.startsWith("super") || lower.startsWith("cust") || lower.startsWith("userdata") || lower.startsWith("system") || entry.size > 300 * 1024 * 1024L) {
                                 break
                             }
                         }
