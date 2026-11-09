@@ -57,6 +57,13 @@ data class RecentFirmwareItem(
     val detectedFormat: String
 )
 
+data class DownloadedFileItem(
+    val name: String,
+    val file: File,
+    val sizeBytes: Long,
+    val lastModified: Long
+)
+
 class UnpackrViewModel(application: Application) : AndroidViewModel(application) {
 
     private val detector = FormatDetector()
@@ -66,6 +73,12 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
 
     private val _screenState = MutableStateFlow<ScreenState>(ScreenState.Home)
     val screenState = _screenState.asStateFlow()
+
+    private val _mainTab = MutableStateFlow(0) // 0: Home, 1: Downloader, 2: Recents
+    val mainTab = _mainTab.asStateFlow()
+
+    private val _downloadedFiles = MutableStateFlow<List<DownloadedFileItem>>(emptyList())
+    val downloadedFiles = _downloadedFiles.asStateFlow()
 
     private val _selectedPartitions = MutableStateFlow<Set<String>>(emptySet())
     val selectedPartitions = _selectedPartitions.asStateFlow()
@@ -84,6 +97,17 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage = _errorMessage.asStateFlow()
+
+    init {
+        refreshDownloadedFiles()
+    }
+
+    fun setMainTab(tab: Int) {
+        _mainTab.value = tab
+        if (tab == 1) {
+            refreshDownloadedFiles()
+        }
+    }
 
     fun updateSearchQuery(query: String) {
         _searchQuery.value = query
@@ -195,7 +219,13 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
                         technical = e.technicalDetails
                     )
                 } catch (e: Exception) {
-                    _errorMessage.value = e.message ?: "Failed to connect or inspect remote firmware URL"
+                    val rawMsg = e.message ?: "General Error"
+                    val userFriendlyMsg = if (rawMsg.isBlank() || rawMsg.toIntOrNull() != null || rawMsg.startsWith("-")) {
+                        "Gagal membaca paket firmware ($rawMsg). Pastikan tautan langsung (direct link) masih aktif."
+                    } else {
+                        rawMsg
+                    }
+                    _errorMessage.value = userFriendlyMsg
                 } finally {
                     _isLoading.value = false
                 }
@@ -250,9 +280,130 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
+    fun getUnpackrDownloadDir(): File {
+        val dir = File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "Unpackr")
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+        return dir
+    }
+
+    fun refreshDownloadedFiles() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val dir = getUnpackrDownloadDir()
+                val files = dir.listFiles()
+                    ?.filter { it.isFile && !it.name.startsWith(".") }
+                    ?.sortedByDescending { it.lastModified() }
+                    ?.map {
+                        DownloadedFileItem(
+                            name = it.name,
+                            file = it,
+                            sizeBytes = it.length(),
+                            lastModified = it.lastModified()
+                        )
+                    } ?: emptyList()
+                _downloadedFiles.value = files
+            } catch (_: Exception) {
+                _downloadedFiles.value = emptyList()
+            }
+        }
+    }
+
+    fun deleteDownloadedFile(item: DownloadedFileItem, onDone: ((Boolean) -> Unit)? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val success = try {
+                item.file.delete()
+            } catch (_: Exception) {
+                false
+            }
+            refreshDownloadedFiles()
+            withContext(Dispatchers.Main) {
+                onDone?.invoke(success)
+            }
+        }
+    }
+
+    fun clearRecentItems() {
+        _recentItems.value = emptyList()
+    }
+
+    fun loadLocalFileDirect(file: File) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+
+            withContext(Dispatchers.IO) {
+                try {
+                    currentPfd?.close()
+                    currentSource?.close()
+
+                    val fis = FileInputStream(file)
+                    val channel = fis.channel
+                    val source = FileChannelSource(channel, closeChannelOnClose = true)
+                    currentSource = source
+
+                    processSource(source, file.name, file.absolutePath)
+                } catch (e: EncryptedFormatException) {
+                    _screenState.value = ScreenState.Unsupported(
+                        title = e.vendorFormat,
+                        reason = e.message,
+                        solution = e.solution,
+                        technical = e.technicalDetails
+                    )
+                } catch (e: Exception) {
+                    val rawMsg = e.message ?: "General Error"
+                    val userFriendlyMsg = if (rawMsg.isBlank() || rawMsg.toIntOrNull() != null || rawMsg.startsWith("-")) {
+                        "Gagal membaca paket firmware ($rawMsg)."
+                    } else {
+                        rawMsg
+                    }
+                    _errorMessage.value = userFriendlyMsg
+                } finally {
+                    _isLoading.value = false
+                }
+            }
+        }
+    }
+
+    fun startDownloadToUnpackr(url: String, context: Context) {
+        val trimmed = url.trim()
+        if (trimmed.isBlank() || (!trimmed.startsWith("http://", ignoreCase = true) && !trimmed.startsWith("https://", ignoreCase = true))) {
+            android.widget.Toast.makeText(context, "URL tidak valid. Masukkan tautan http:// atau https://", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        try {
+            getUnpackrDownloadDir()
+            val fileName = trimmed.substringBefore('?').substringAfterLast('/').ifBlank { "firmware_${System.currentTimeMillis()}.bin" }
+            val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+            val request = android.app.DownloadManager.Request(Uri.parse(trimmed))
+                .setTitle(fileName)
+                .setDescription("Mengunduh ke /sdcard/Download/Unpackr...")
+                .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, "Unpackr/$fileName")
+                .setAllowedOverMetered(true)
+                .setAllowedOverRoaming(true)
+
+            downloadManager.enqueue(request)
+            android.widget.Toast.makeText(
+                context,
+                "Mengunduh $fileName ke /sdcard/Download/Unpackr...",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            refreshDownloadedFiles()
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(
+                context,
+                "Gagal memulai unduhan: ${e.message}",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     /**
      * Downloads the original full ROM package directly from the remote link
-     * into the device's public Downloads directory using Android DownloadManager.
+     * into the device's public Downloads/Unpackr directory using Android DownloadManager.
      */
     fun downloadFullRom(context: Context) {
         val httpSource = currentSource as? com.unpackr.engine.source.HttpFirmwareSource
@@ -262,21 +413,23 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
         }
 
         try {
+            getUnpackrDownloadDir()
             val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
             val request = android.app.DownloadManager.Request(Uri.parse(httpSource.url))
                 .setTitle(httpSource.fileName)
                 .setDescription("Mengunduh arsip ROM asli...")
                 .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, httpSource.fileName)
+                .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, "Unpackr/${httpSource.fileName}")
                 .setAllowedOverMetered(true)
                 .setAllowedOverRoaming(true)
 
             downloadManager.enqueue(request)
             android.widget.Toast.makeText(
                 context,
-                "Mengunduh ${httpSource.fileName} ke folder Download via sistem...",
+                "Mengunduh ${httpSource.fileName} ke /sdcard/Download/Unpackr...",
                 android.widget.Toast.LENGTH_LONG
             ).show()
+            refreshDownloadedFiles()
         } catch (e: Exception) {
             android.widget.Toast.makeText(
                 context,

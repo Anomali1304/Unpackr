@@ -5,11 +5,38 @@
 
     <!-- Navigation & Titles -->
     <string name="nav_home">Home</string>
+    <string name="nav_tab_home">Home</string>
+    <string name="nav_tab_downloader">Downloader</string>
+    <string name="nav_tab_recents">Recents</string>
     <string name="nav_detected">Firmware Inspector</string>
     <string name="nav_extracting">Extracting Partitions</string>
     <string name="nav_result">Extraction Summary</string>
     <string name="nav_unsupported">Unsupported Container</string>
     <string name="nav_settings">Settings &amp; About</string>
+
+    <!-- Downloader Tab -->
+    <string name="downloader_title">ROM Downloader</string>
+    <string name="downloader_folder_label">Internal Storage:</string>
+    <string name="downloader_folder_path">/sdcard/Download/Unpackr</string>
+    <string name="downloader_input_placeholder">Paste direct ROM download URL (.zip / .tgz)...</string>
+    <string name="downloader_start_button">Download to Folder</string>
+    <string name="downloader_list_title">Downloaded Files (%1$d)</string>
+    <string name="downloader_empty_title">No files in Unpackr folder</string>
+    <string name="downloader_empty_desc">Download Full ROMs from direct links or from the inspector screen. Files will be automatically saved in /sdcard/Download/Unpackr.</string>
+    <string name="downloader_action_open">Open in Unpackr</string>
+    <string name="downloader_action_delete">Delete</string>
+    <string name="downloader_delete_confirm_title">Delete File?</string>
+    <string name="downloader_delete_confirm_desc">Delete %1$s from internal storage (/sdcard/Download/Unpackr)? This action cannot be undone.</string>
+    <string name="downloader_file_deleted">File successfully deleted.</string>
+    <string name="downloader_refresh">Refresh</string>
+
+    <!-- Recents Tab -->
+    <string name="recents_tab_title">Recent Firmware Archives</string>
+    <string name="recents_tab_desc">List of local and remote ROM archives you have previously inspected or extracted.</string>
+    <string name="recents_clear_button">Clear Recents</string>
+    <string name="recents_clear_confirm_title">Clear All History?</string>
+    <string name="recents_clear_confirm_desc">All saved recent archive entries will be cleared from the app.</string>
+    <string name="recents_cleared_toast">Recent archives successfully cleared.</string>
 
     <!-- Home Screen -->
     <string name="home_hero_title">Universal Android Firmware Unpacker</string>

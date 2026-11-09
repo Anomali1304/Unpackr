@@ -2,4 +2,6 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <external-files-path name="extracted_external" path="extracted/" />
     <files-path name="extracted_internal" path="extracted/" />
+    <external-path name="download_unpackr" path="Download/Unpackr/" />
+    <external-path name="external_download" path="Download/" />
 </paths>

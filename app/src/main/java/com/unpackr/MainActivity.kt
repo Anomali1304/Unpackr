@@ -95,6 +95,9 @@ fun UnpackrApp(viewModel: UnpackrViewModel) {
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
 
+    val mainTab by viewModel.mainTab.collectAsStateWithLifecycle()
+    val downloadedFiles by viewModel.downloadedFiles.collectAsStateWithLifecycle()
+
     var showOptionsSheet by remember { mutableStateOf(false) }
 
     Surface(modifier = Modifier.fillMaxSize()) {
@@ -122,9 +125,17 @@ fun UnpackrApp(viewModel: UnpackrViewModel) {
                         isLoading = isLoading,
                         errorMessage = errorMessage,
                         recentFiles = recentFiles,
+                        downloadedFiles = downloadedFiles,
+                        selectedTab = mainTab,
+                        onTabSelected = { viewModel.setMainTab(it) },
                         onFileSelected = { uri -> viewModel.loadFirmwareUri(uri) },
                         onUrlSubmitted = { url -> viewModel.loadFirmwareUrl(url) },
-                        onNavigateSettings = { viewModel.navigateTo(ScreenState.Settings) }
+                        onNavigateSettings = { viewModel.navigateTo(ScreenState.Settings) },
+                        onRefreshDownloads = { viewModel.refreshDownloadedFiles() },
+                        onDeleteDownloadedFile = { item, callback -> viewModel.deleteDownloadedFile(item, callback) },
+                        onOpenLocalFile = { file -> viewModel.loadLocalFileDirect(file) },
+                        onStartDownloadUrl = { url, context -> viewModel.startDownloadToUnpackr(url, context) },
+                        onClearRecents = { viewModel.clearRecentItems() }
                     )
                 }
 

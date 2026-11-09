@@ -9,12 +9,13 @@ It operates entirely in user-space with **zero native binary dependencies (`.so`
 ## Technical Highlights
 
 - **User-Space Sandbox & Zero Native Binaries**: Runs inside the standard Android application sandbox using high-performance NIO channels (`FileChannel`, `ByteBuffer`). Does not bundle compiled ELF binaries.
-- **HTTP Range Streaming & Full ROM Download**: Supports inspecting and extracting partitions directly from remote download URLs (e.g., official factory image links, Xiaomi OTA, or mirrors) using HTTP `Range: bytes=start-end` requests. Eliminates the requirement to download 5–10 GB archives to local storage just to extract a 64 MB kernel image. Also supports downloading the full original ROM directly to device storage.
-- **Selective Extraction**: Pick only the partitions you need (such as `boot.img` for patching or `vbmeta.img` for signing) instead of decompressing the entire multi-gigabyte package.
-- **ZIP64 & TGZ Stream Engine**: Fully compliant positional Zip64 Central Directory parser (>4GB archives) and stream-optimized Fastboot TGZ (`.tgz` / `.tar.gz`) decompressor.
+- **HTTP Range Streaming & ROM Downloader**: Supports inspecting and extracting partitions directly from remote download URLs using HTTP `Range` requests. Features a dedicated **Downloader Tab** that saves full ROM packages directly into internal storage under `/sdcard/Download/Unpackr`, allowing users to manage, inspect, or delete downloaded packages directly within the app.
+- **Tabbed Interface & Recent Archives**: Clean 3-tab navigation (Home, Downloader, and Recents) for quick access to recent firmware entries and internal storage management.
+- **Selective Extraction**: Pick only the partitions you need (such as `boot.img` for kernel patching or `vbmeta.img`) instead of decompressing multi-gigabyte archives.
+- **Fastboot Core Filter & ZIP64/TGZ Engine**: Positional Zip64 Central Directory parser (>4GB archives), stream-optimized Fastboot TGZ decompressor, and targeted core partition filtering (`boot`, `vendor_boot`, `init_boot`, `vbmeta`) for fastboot ROMs.
 - **Cryptographic Verification**: Automatically verifies block-level and partition-level SHA-256 hashes against embedded manifests.
 - **Background Execution**: Long-running extraction tasks run inside an Android Foreground Service with wake locks and notification progress reporting.
-- **Google Material You & Android 16 Fluid UI**: Pure Material Design 3 interface featuring authentic Google Material adaptive vector icons, dynamic Monet palette theme, and Android 16 fluid motion physics.
+- **Google Material You & Fluid UI**: Pure Material Design 3 interface featuring adaptive vector icons, dynamic Monet palette theme, and fluid motion physics.
 
 ---
 

@@ -221,26 +221,31 @@ object DeltaManifestParser {
         var oldInfo: PartitionInfo? = null
         val operations = mutableListOf<InstallOperation>()
 
-        while (stream.hasMore()) {
-            val tag = stream.readTag()
-            if (tag == 0) break
-            when (tag ushr 3) {
-                1 -> name = stream.readString()
-                4 -> oldInfo = parsePartitionInfo(stream.readBytes())
-                5 -> newInfo = parsePartitionInfo(stream.readBytes())
-                6 -> {
-                    val sub = stream.readBytes()
-                    try {
-                        operations.add(parseInstallOperation(sub))
-                    } catch (_: Exception) {
-                        oldInfo = parsePartitionInfo(sub)
+        try {
+            while (stream.hasMore()) {
+                val tag = stream.readTag()
+                if (tag == 0) break
+                when (tag ushr 3) {
+                    1 -> name = stream.readString()
+                    4 -> try { oldInfo = parsePartitionInfo(stream.readBytes()) } catch (_: Exception) {}
+                    5 -> try { newInfo = parsePartitionInfo(stream.readBytes()) } catch (_: Exception) {}
+                    6 -> {
+                        try {
+                            val sub = stream.readBytes()
+                            try {
+                                operations.add(parseInstallOperation(sub))
+                            } catch (_: Exception) {
+                                oldInfo = parsePartitionInfo(sub)
+                            }
+                        } catch (_: Exception) {}
                     }
+                    7 -> try { newInfo = parsePartitionInfo(stream.readBytes()) } catch (_: Exception) {}
+                    8 -> try { operations.add(parseInstallOperation(stream.readBytes())) } catch (_: Exception) {}
+                    else -> try { stream.skipField(tag) } catch (_: Exception) { break }
                 }
-                7 -> newInfo = parsePartitionInfo(stream.readBytes())
-                8 -> operations.add(parseInstallOperation(stream.readBytes()))
-                else -> stream.skipField(tag)
             }
-        }
+        } catch (_: Exception) {}
+
         return PartitionUpdate(name, newInfo, oldInfo, operations)
     }
 

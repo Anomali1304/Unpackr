@@ -147,6 +147,10 @@ class FastbootTarHandler : FirmwareHandler {
         val isCompressed = isGzip(src)
         val imageEntries = mutableListOf<TarImageEntry>()
 
+        val CORE_FASTBOOT_PARTITIONS = setOf(
+            "boot", "vendor_boot", "init_boot", "vbmeta"
+        )
+
         if (isCompressed) {
             val isRemote = src is com.unpackr.engine.source.HttpFirmwareSource
             val inStream = createInputStream(src, 0, src.size)
@@ -155,21 +159,22 @@ class FastbootTarHandler : FirmwareHandler {
                 var entry = tarInput.nextTarEntry
                 while (entry != null) {
                     val cleanName = entry.name.substringAfterLast('/')
+                    val simpleName = cleanName.removeSuffix(".img").lowercase()
+
                     if (IMAGE_EXTS.any { cleanName.endsWith(it, ignoreCase = true) }) {
-                        imageEntries.add(
-                            TarImageEntry(
-                                entryName = entry.name,
-                                partitionName = cleanName,
-                                size = entry.size
+                        val isTargetPartition = CORE_FASTBOOT_PARTITIONS.contains(simpleName)
+                        if (!isRemote || isTargetPartition) {
+                            imageEntries.add(
+                                TarImageEntry(
+                                    entryName = entry.name,
+                                    partitionName = cleanName,
+                                    size = entry.size
+                                )
                             )
-                        )
-                        // On remote streams, after recording a major system/data partition (userdata/super/cust/system or >300MB),
-                        // stop further stream decompression so inspect remains capped at ~55MB network data.
-                        if (isRemote) {
-                            val lower = cleanName.lowercase()
-                            if (lower.startsWith("super") || lower.startsWith("cust") || lower.startsWith("userdata") || lower.startsWith("system") || entry.size > 300 * 1024 * 1024L) {
-                                break
-                            }
+                        }
+                        // Stop immediately when encountering heavy system/data partition images
+                        if (isRemote && (simpleName == "userdata" || simpleName == "super" || simpleName == "cust" || simpleName == "system" || entry.size > 200 * 1024 * 1024L)) {
+                            break
                         }
                     }
                     entry = tarInput.nextTarEntry
