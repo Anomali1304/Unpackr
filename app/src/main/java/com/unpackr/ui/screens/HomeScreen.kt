@@ -160,17 +160,8 @@ fun HomeScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    val scale by animateFloatAsState(
-                        targetValue = 1f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioLowBouncy,
-                            stiffness = Spring.StiffnessLow
-                        ),
-                        label = "app_name_scale"
-                    )
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.graphicsLayer(scaleX = scale, scaleY = scale)
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
@@ -263,220 +254,176 @@ fun HomeScreen(
 
             // Hero Card: Primary Ingestion Actions
             item {
-                var visible by remember { mutableStateOf(false) }
-                LaunchedEffect(Unit) {
-                    delay(100)
-                    visible = true
-                }
-                AnimatedVisibility(
-                    visible = visible,
-                    enter = slideInVertically(
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioLowBouncy,
-                            stiffness = Spring.StiffnessLow
-                        )
-                    ) { it / 2 } + fadeIn()
+                ElevatedCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("pick_firmware_card"),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    ),
+                    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 4.dp)
                 ) {
-                    ElevatedCard(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .testTag("pick_firmware_card"),
-                        shape = RoundedCornerShape(28.dp),
-                        colors = CardDefaults.elevatedCardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                        ),
-                        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 4.dp)
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Column(
+                        Box(
+                            modifier = Modifier
+                                .size(68.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.UploadFile,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(36.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text(
+                            text = stringResource(R.string.home_hero_title),
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = stringResource(R.string.home_hero_subtitle),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
+                            textAlign = TextAlign.Center,
+                            lineHeight = 20.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        // Action 1: Open Local File
+                        Button(
+                            onClick = { filePicker.launch(arrayOf("*/*")) },
+                            enabled = !isLoading,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                                .height(54.dp)
+                                .testTag("pick_firmware_button"),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            )
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(68.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.UploadFile,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(36.dp)
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    strokeWidth = 2.5.dp
                                 )
-                            }
-
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            Text(
-                                text = stringResource(R.string.home_hero_title),
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                textAlign = TextAlign.Center
-                            )
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            Text(
-                                text = stringResource(R.string.home_hero_subtitle),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
-                                textAlign = TextAlign.Center,
-                                lineHeight = 20.sp
-                            )
-
-                            Spacer(modifier = Modifier.height(24.dp))
-
-                            // Action 1: Open Local File
-                            Button(
-                                onClick = { filePicker.launch(arrayOf("*/*")) },
-                                enabled = !isLoading,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(54.dp)
-                                    .testTag("pick_firmware_button"),
-                                shape = RoundedCornerShape(18.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
-                                )
-                            ) {
-                                if (isLoading) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(24.dp),
-                                        color = MaterialTheme.colorScheme.onPrimary,
-                                        strokeWidth = 2.5.dp
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text("Inspecting Archive…")
-                                } else {
-                                    Icon(imageVector = Icons.Default.FolderOpen, contentDescription = null)
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text(
-                                        text = stringResource(R.string.home_pick_local_button),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            // Action 2: Inspect Remote URL directly
-                            FilledTonalButton(
-                                onClick = { showUrlDialog = true },
-                                enabled = !isLoading,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(50.dp)
-                                    .testTag("open_url_button"),
-                                shape = RoundedCornerShape(18.dp)
-                            ) {
-                                Icon(imageVector = Icons.Default.CloudDownload, contentDescription = null)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text("Inspecting Archive…")
+                            } else {
+                                Icon(imageVector = Icons.Default.FolderOpen, contentDescription = null)
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
-                                    text = stringResource(R.string.home_url_button),
-                                    style = MaterialTheme.typography.titleSmall,
+                                    text = stringResource(R.string.home_pick_local_button),
+                                    style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.SemiBold
                                 )
                             }
+                        }
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
+                        // Action 2: Inspect Remote URL directly
+                        FilledTonalButton(
+                            onClick = { showUrlDialog = true },
+                            enabled = !isLoading,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                                .testTag("open_url_button"),
+                            shape = RoundedCornerShape(18.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.CloudDownload, contentDescription = null)
+                            Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = stringResource(R.string.home_pick_local_caption),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                                textAlign = TextAlign.Center
+                                text = stringResource(R.string.home_url_button),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = stringResource(R.string.home_pick_local_caption),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }
 
             // Supported Container Standards
             item {
-                var visible by remember { mutableStateOf(false) }
-                LaunchedEffect(Unit) {
-                    delay(200)
-                    visible = true
-                }
-                AnimatedVisibility(
-                    visible = visible,
-                    enter = slideInVertically(
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioLowBouncy,
-                            stiffness = Spring.StiffnessLow
-                        )
-                    ) { it / 3 } + fadeIn()
-                ) {
-                    Column {
-                        Text(
-                            text = stringResource(R.string.home_supported_formats),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
+                Column {
+                    Text(
+                        text = stringResource(R.string.home_supported_formats),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            FormatChip(stringResource(R.string.home_format_payload), Icons.Default.Speed)
-                            FormatChip(stringResource(R.string.home_format_sparse), Icons.Default.Storage)
-                            FormatChip(stringResource(R.string.home_format_super), Icons.Default.Archive)
-                            FormatChip(stringResource(R.string.home_format_fastboot), Icons.Default.UploadFile)
-                            FormatChip(stringResource(R.string.home_format_newdat), Icons.Default.Description)
-                            FormatChip(stringResource(R.string.home_format_samsung), Icons.Default.CheckCircle)
-                        }
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FormatChip(stringResource(R.string.home_format_payload), Icons.Default.Speed)
+                        FormatChip(stringResource(R.string.home_format_sparse), Icons.Default.Storage)
+                        FormatChip(stringResource(R.string.home_format_super), Icons.Default.Archive)
+                        FormatChip(stringResource(R.string.home_format_fastboot), Icons.Default.UploadFile)
+                        FormatChip(stringResource(R.string.home_format_newdat), Icons.Default.Description)
+                        FormatChip(stringResource(R.string.home_format_samsung), Icons.Default.CheckCircle)
                     }
                 }
             }
 
             // Recent Files Section
             item {
-                var visible by remember { mutableStateOf(false) }
-                LaunchedEffect(Unit) {
-                    delay(300)
-                    visible = true
-                }
-                AnimatedVisibility(
-                    visible = visible,
-                    enter = slideInVertically(
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioLowBouncy,
-                            stiffness = Spring.StiffnessLow
+                Column {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.History,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
                         )
-                    ) { it / 4 } + fadeIn()
-                ) {
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.History,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = stringResource(R.string.home_recent_files),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.home_recent_files),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                        if (recentFiles.isEmpty()) {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
+                    if (recentFiles.isEmpty()) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.surface
@@ -495,7 +442,6 @@ fun HomeScreen(
                         }
                     }
                 }
-            }
 
             items(recentFiles.take(recentFiles.size)) { item ->
                 RecentFileCard(

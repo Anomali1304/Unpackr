@@ -101,17 +101,17 @@ fun UnpackrApp(viewModel: UnpackrViewModel) {
         AnimatedContent(
             targetState = screenState,
             transitionSpec = {
-                val springSpec = spring<IntOffset>(
-                    dampingRatio = Spring.DampingRatioLowBouncy,
-                    stiffness = Spring.StiffnessLow
+                val tweenSpec = tween<IntOffset>(
+                    durationMillis = 220,
+                    easing = FastOutSlowInEasing
                 )
                 
                 if (targetState is ScreenState.Home) {
-                    (slideInHorizontally(springSpec) { -it } + fadeIn())
-                        .togetherWith(slideOutHorizontally(springSpec) { it } + fadeOut())
+                    (slideInHorizontally(animationSpec = tweenSpec) { -it / 3 } + fadeIn(animationSpec = tween(150)))
+                        .togetherWith(slideOutHorizontally(animationSpec = tweenSpec) { it / 3 } + fadeOut(animationSpec = tween(150)))
                 } else {
-                    (slideInHorizontally(springSpec) { it } + fadeIn())
-                        .togetherWith(slideOutHorizontally(springSpec) { -it } + fadeOut())
+                    (slideInHorizontally(animationSpec = tweenSpec) { it / 3 } + fadeIn(animationSpec = tween(150)))
+                        .togetherWith(slideOutHorizontally(animationSpec = tweenSpec) { -it / 3 } + fadeOut(animationSpec = tween(150)))
                 }
             },
             label = "screen_transition"

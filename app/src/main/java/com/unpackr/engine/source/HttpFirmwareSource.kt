@@ -40,7 +40,7 @@ class HttpFirmwareSource(
 
     private var rollingCache: ByteArray? = null
     private var rollingOffset: Long = -1L
-    private val PREFETCH_SIZE = 512 * 1024 // 512 KB prefetch buffer
+    private val PREFETCH_SIZE = 1024 * 1024 // 1 MB prefetch buffer for smooth streaming
 
     init {
         // Probe file size and fetch the first chunk (HEAD cache) in one go
@@ -83,8 +83,12 @@ class HttpFirmwareSource(
             }
         }
 
-        // Prefetch tail cache for ZIP parsing (EOCD is at the end)
-        if (supportsRange && size > CACHE_SIZE) {
+        // Prefetch tail cache ONLY for ZIP parsing (where EOCD is at the end)
+        val isZipHead = headCache?.let { b ->
+            b.size >= 4 && b[0] == 0x50.toByte() && b[1] == 0x4B.toByte()
+        } ?: false
+
+        if (supportsRange && size > CACHE_SIZE && isZipHead) {
             tailOffset = (size - CACHE_SIZE).coerceAtLeast(0L)
             val tailReq = Request.Builder()
                 .url(url)

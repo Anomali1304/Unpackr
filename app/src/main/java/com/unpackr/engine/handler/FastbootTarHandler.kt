@@ -69,7 +69,7 @@ class FastbootTarHandler : FirmwareHandler {
                     var foundImages = 0
                     var isFastboot = false
 
-                    while (entry != null && checkedCount < 20) {
+                    while (entry != null && checkedCount < 3) {
                         checkedCount++
                         val cleanName = entry.name.substringAfterLast('/')
                         if (IMAGE_EXTS.any { cleanName.endsWith(it, ignoreCase = true) }) {
@@ -78,7 +78,7 @@ class FastbootTarHandler : FirmwareHandler {
                         if (cleanName.startsWith("flash_all") || cleanName == "images") {
                             isFastboot = true
                         }
-                        if (foundImages > 0 && isFastboot) break
+                        if (foundImages > 0 || isFastboot) break
                         entry = tarInput.nextTarEntry
                     }
 
@@ -163,11 +163,11 @@ class FastbootTarHandler : FirmwareHandler {
                                 size = entry.size
                             )
                         )
-                        // If remote HTTP stream, stop early when encountering large partition images (super, cust, system, userdata)
-                        // to prevent downloading gigabytes of GZIP stream data during inspection alone.
+                        // On remote streams, after recording the first major partition (userdata/super/cust/system or >50MB),
+                        // stop decompression immediately so inspect is capped at ~55MB max data usage.
                         if (isRemote) {
                             val lower = cleanName.lowercase()
-                            if (lower.startsWith("super") || lower.startsWith("cust") || lower.startsWith("userdata") || lower.startsWith("system") || entry.size > 250 * 1024 * 1024L) {
+                            if (lower.startsWith("super") || lower.startsWith("cust") || lower.startsWith("userdata") || lower.startsWith("system") || entry.size > 50 * 1024 * 1024L) {
                                 break
                             }
                         }
