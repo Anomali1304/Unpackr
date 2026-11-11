@@ -132,23 +132,27 @@ class HttpFirmwareSource(
             }
         }
 
-        // 2. Check tail cache
-        if (tailCache != null && position >= tailOffset && position < tailOffset + tailCache!!.size) {
+        // 2. Check tail cache (supports partial tail reads)
+        if (tailCache != null && position >= tailOffset) {
             val offsetInCache = (position - tailOffset).toInt()
-            val availableInCache = (tailCache!!.size - offsetInCache).coerceAtMost(lengthToRead)
-            if (availableInCache > 0) {
-                dst.put(tailCache!!, offsetInCache, availableInCache)
-                return availableInCache
+            if (offsetInCache < tailCache!!.size) {
+                val availableInCache = (tailCache!!.size - offsetInCache).coerceAtMost(lengthToRead)
+                if (availableInCache > 0) {
+                    dst.put(tailCache!!, offsetInCache, availableInCache)
+                    return availableInCache
+                }
             }
         }
 
-        // 3. Check rolling cache
-        if (rollingCache != null && position >= rollingOffset && position < rollingOffset + rollingCache!!.size) {
+        // 3. Check rolling cache (supports partial rolling hits)
+        if (rollingCache != null && position >= rollingOffset) {
             val offsetInCache = (position - rollingOffset).toInt()
-            val availableInCache = (rollingCache!!.size - offsetInCache).coerceAtMost(lengthToRead)
-            if (availableInCache > 0) {
-                dst.put(rollingCache!!, offsetInCache, availableInCache)
-                return availableInCache
+            if (offsetInCache < rollingCache!!.size) {
+                val availableInCache = (rollingCache!!.size - offsetInCache).coerceAtMost(lengthToRead)
+                if (availableInCache > 0) {
+                    dst.put(rollingCache!!, offsetInCache, availableInCache)
+                    return availableInCache
+                }
             }
         }
 
