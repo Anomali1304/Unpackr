@@ -331,5 +331,54 @@ class UnpackrEngineTest {
             println("Skipping live network test due to network connectivity: ${e.message}")
         }
     }
+
+    @Test
+    fun testLargeFirmwareSourceBounds() {
+        val largeSize = 3_899_499_384L // Exact size of user's Xiaomi ROM
+        val fakeSource = object : com.unpackr.engine.source.FirmwareSource {
+            override val size: Long = largeSize
+            override fun read(position: Long, dst: ByteBuffer): Int {
+                val toPut = minOf(dst.remaining().toLong(), size - position).toInt()
+                for (i in 0 until toPut) {
+                    dst.put(0x42.toByte())
+                }
+                return toPut
+            }
+            override fun close() {}
+        }
+
+        // Must not throw NegativeArraySizeException (-395467912)
+        val bytes = fakeSource.readBytes(0, 12)
+        assertEquals(12, bytes.size)
+        assertEquals(0x42.toByte(), bytes[0])
+
+        // Slice must also handle >2GB cleanly
+        val sliced = fakeSource.slice(100, 3_899_492_001L)
+        assertEquals(3_899_492_001L, sliced.size)
+        val slicedBytes = sliced.readBytes(0, 4)
+        assertEquals(4, slicedBytes.size)
+    }
+
+    @Test
+    fun testUserXiaomiRomDirectUrl() = runBlocking {
+        val url = "https://bigota.d.miui.com/OS1.0.7.0.ULUIDXM/miui_ROCKIDGlobal_OS1.0.7.0.ULUIDXM_71390f0723_14.0.zip"
+        try {
+            val source = com.unpackr.engine.source.HttpFirmwareSource(url)
+            assertEquals(3899499384L, source.size)
+            assertTrue(source.supportsRange)
+
+            val detector = FormatDetector()
+            val match = detector.detect(source)
+            assertNotNull(match)
+            assertEquals("Android OTA Zip (A/B Payload)", match.formatName)
+
+            val info = match.handler.inspect(source)
+            assertTrue("Partitions must be parsed from payload.bin", info.partitions.isNotEmpty())
+            val names = info.partitions.map { it.name }
+            assertTrue("Must contain boot.img", names.contains("boot.img"))
+        } catch (e: java.io.IOException) {
+            println("Network test skipped/failed: ${e.message}")
+        }
+    }
 }
 

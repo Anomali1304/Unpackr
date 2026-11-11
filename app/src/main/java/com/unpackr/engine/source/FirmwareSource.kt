@@ -66,7 +66,8 @@ interface FirmwareSource : Closeable {
     }
 
     fun readBytes(position: Long, count: Int): ByteArray {
-        val actualCount = count.coerceAtMost((size - position).coerceAtLeast(0).toInt())
+        val remaining = (size - position).coerceAtLeast(0L)
+        val actualCount = minOf(count.toLong(), remaining).toInt()
         val bytes = ByteArray(actualCount)
         if (actualCount > 0) {
             readFully(position, bytes, 0, actualCount)
@@ -96,7 +97,7 @@ interface FirmwareSource : Closeable {
 
             override fun read(b: ByteArray, off: Int, len: Int): Int {
                 if (curPos >= endPos) return -1
-                val toRead = len.coerceAtMost((endPos - curPos).toInt())
+                val toRead = minOf(len.toLong(), endPos - curPos).toInt()
                 if (toRead <= 0) return 0
                 val byteBuffer = java.nio.ByteBuffer.wrap(b, off, toRead)
                 val n = this@FirmwareSource.read(curPos, byteBuffer)
@@ -136,7 +137,7 @@ class ByteArraySource(private val data: ByteArray) : FirmwareSource {
 
     override fun read(position: Long, dst: ByteBuffer): Int {
         if (position >= size) return -1
-        val available = (size - position).toInt().coerceAtMost(dst.remaining())
+        val available = minOf(size - position, dst.remaining().toLong()).toInt()
         dst.put(data, position.toInt(), available)
         return available
     }
@@ -152,7 +153,7 @@ class SlicedFirmwareSource(
 
     override fun read(position: Long, dst: ByteBuffer): Int {
         if (position >= size) return -1
-        val maxToRead = (size - position).toInt().coerceAtMost(dst.remaining())
+        val maxToRead = minOf(size - position, dst.remaining().toLong()).toInt()
         if (maxToRead <= 0) return -1
 
         val origLimit = dst.limit()

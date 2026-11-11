@@ -65,7 +65,7 @@ class FormatDetector(
 
         throw UnknownFormatException(
             message = "Unrecognized container format. Not a recognized Android firmware image.",
-            technicalDetails = "Archive size: ${src.size} bytes\nLeading magic bytes: ${src.readBytes(0, 16.coerceAtMost(src.size.toInt())).joinToString(" ") { "%02X".format(it) }}"
+            technicalDetails = "Archive size: ${src.size} bytes\nLeading magic bytes: ${src.readBytes(0, minOf(16L, src.size).toInt()).joinToString(" ") { "%02X".format(it) }}"
         )
     }
 }
