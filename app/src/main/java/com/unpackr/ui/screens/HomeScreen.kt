@@ -187,14 +187,14 @@ fun HomeScreen(
                     NavigationBarItem(
                         selected = selectedTab == 1,
                         onClick = { onTabSelected(1) },
-                        icon = { Icon(Icons.Default.CloudDownload, contentDescription = null) },
-                        label = { Text(stringResource(R.string.nav_tab_downloader)) }
+                        icon = { Icon(Icons.Default.History, contentDescription = null) },
+                        label = { Text(stringResource(R.string.nav_tab_recents)) }
                     )
                     NavigationBarItem(
                         selected = selectedTab == 2,
                         onClick = { onTabSelected(2) },
-                        icon = { Icon(Icons.Default.History, contentDescription = null) },
-                        label = { Text(stringResource(R.string.nav_tab_recents)) }
+                        icon = { Icon(Icons.Default.CloudDownload, contentDescription = null) },
+                        label = { Text(stringResource(R.string.nav_tab_downloader)) }
                     )
                 }
             }
@@ -393,16 +393,6 @@ fun HomeScreen(
                     }
                 }
                 1 -> {
-                    // Downloader Tab
-                    DownloaderTab(
-                        downloadedFiles = downloadedFiles,
-                        onRefresh = onRefreshDownloads,
-                        onDeleteFile = onDeleteDownloadedFile,
-                        onOpenFile = onOpenLocalFile,
-                        onDownloadUrl = onStartDownloadUrl
-                    )
-                }
-                2 -> {
                     // Recents Tab
                     RecentsTab(
                         recentFiles = recentFiles,
@@ -414,6 +404,16 @@ fun HomeScreen(
                                 onFileSelected(Uri.parse(item.uriString))
                             }
                         }
+                    )
+                }
+                2 -> {
+                    // Downloader Tab
+                    DownloaderTab(
+                        downloadedFiles = downloadedFiles,
+                        onRefresh = onRefreshDownloads,
+                        onDeleteFile = onDeleteDownloadedFile,
+                        onOpenFile = onOpenLocalFile,
+                        onDownloadUrl = onStartDownloadUrl
                     )
                 }
             }

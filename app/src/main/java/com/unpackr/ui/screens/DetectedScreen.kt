@@ -190,9 +190,9 @@ fun DetectedScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = if (isFullRomAction) {
-                                "Unduh Full ROM"
+                                "Download Full ROM"
                             } else {
-                                "Ekstrak (${selectedPartitions.size})"
+                                "Extract (${selectedPartitions.size})"
                             },
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
@@ -337,7 +337,7 @@ fun DetectedScreen(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Unduh", fontWeight = FontWeight.Bold)
+                                Text("Download", fontWeight = FontWeight.Bold)
                             }
                         }
                     }

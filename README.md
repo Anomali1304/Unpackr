@@ -9,8 +9,8 @@ It operates entirely in user-space with **zero native binary dependencies (`.so`
 ## Technical Highlights
 
 - **User-Space Sandbox & Zero Native Binaries**: Runs inside the standard Android application sandbox using high-performance NIO channels (`FileChannel`, `ByteBuffer`). Does not bundle compiled ELF binaries.
-- **HTTP Range Streaming & ROM Downloader**: Supports inspecting and extracting partitions directly from remote download URLs using HTTP `Range` requests. Features a dedicated **Downloader Tab** that saves full ROM packages directly into internal storage under `/sdcard/Download/Unpackr`, allowing users to manage, inspect, or delete downloaded packages directly within the app.
-- **Tabbed Interface & Recent Archives**: Clean 3-tab navigation (Home, Downloader, and Recents) for quick access to recent firmware entries and internal storage management.
+- **HTTP Range Streaming & ROM Downloader**: Supports inspecting and selectively extracting partitions directly from remote download URLs using HTTP `Range` requests (optimized specifically for OTA/Recovery `.zip` archives containing `payload.bin` or `system.new.dat.br`). Features a dedicated **Downloader Tab** that saves full ROM packages (including Fastboot `.tgz` / `.zip`) directly into internal storage under `/sdcard/Download/Unpackr`, allowing users to manage, inspect, or delete downloaded packages directly within the app.
+- **Tabbed Interface & Recent Archives**: Clean 3-tab navigation (Home, Recents, and Downloader) for quick access to recent firmware entries and internal storage management.
 - **Selective Extraction**: Pick only the partitions you need (such as `boot.img` for kernel patching or `vbmeta.img`) instead of decompressing multi-gigabyte archives.
 - **Fastboot Core Filter & ZIP64/TGZ Engine**: Positional Zip64 Central Directory parser (>4GB archives), stream-optimized Fastboot TGZ decompressor, and targeted core partition filtering (`boot`, `vendor_boot`, `init_boot`, `vbmeta`) for fastboot ROMs.
 - **Cryptographic Verification**: Automatically verifies block-level and partition-level SHA-256 hashes against embedded manifests.
@@ -28,7 +28,7 @@ It operates entirely in user-space with **zero native binary dependencies (`.so`
 | **Dynamic Partitions (`super.img`)** | `0x616C0D41` (`LP_METADATA_GEOMETRY_MAGIC`) | Parses `liblp` metadata tables, partition descriptor groups, and extent maps. Assembles contiguous or sparse logical partitions (`system`, `vendor`, `product`, `odm`, `system_ext`). |
 | **Fastboot Factory ZIP / ZIP64** | `PK\x03\x04` / `PK\x01\x02` (ZIP32/ZIP64) | Positional Zip64 Central Directory parser with nested `image-*.zip` discovery and anti-Zip-Slip path traversal verification. |
 | **Fastboot TGZ / TAR Archives** | `.tgz`, `.tar.gz`, POSIX USTAR | Stream-optimized GZIP decompressor and USTAR record parser with early-stop inspection to save network data. |
-| **Android Block OTA (`new.dat`)** | `*.transfer.list` + `system.new.dat[.br/.xz]` | Decodes transfer list commands (`new`, `erase`, `zero`), re-orders sparse block extents into linear disk images. |
+| **Android Block OTA (`new.dat.br`)** | `*.transfer.list` + `system.new.dat[.br/.xz]` | Decodes transfer list commands (`new`, `erase`, `zero`), decompresses Brotli (RFC 7932 pure JVM) or XZ streams, and re-orders sparse block extents into byte-accurate linear disk images. |
 | **Samsung Binary Archives** | USTAR POSIX TAR (`.tar` / `.tar.md5`) | Parses 512-byte USTAR record headers and streams real-time LZ4 frame decompression (`.img.lz4`) directly to storage. |
 | **Proprietary Vendor Archives** | OFP (Oppo/Realme), OZIP, NB0, PAC | Diagnostic probe identifies format, displays technical explanation of vendor proprietary cipher requirements, and suggests standard desktop alternatives. |
 

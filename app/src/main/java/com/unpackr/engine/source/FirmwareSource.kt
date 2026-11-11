@@ -80,6 +80,33 @@ interface FirmwareSource : Closeable {
         }
         return SlicedFirmwareSource(this, offset, length)
     }
+
+    fun asInputStream(startOffset: Long = 0L, length: Long = size - startOffset): java.io.InputStream {
+        return object : java.io.InputStream() {
+            private var curPos = startOffset
+            private val endPos = (startOffset + length).coerceAtMost(size)
+
+            override fun read(): Int {
+                if (curPos >= endPos) return -1
+                val buf = ByteArray(1)
+                readFully(curPos, buf, 0, 1)
+                curPos++
+                return buf[0].toInt() and 0xFF
+            }
+
+            override fun read(b: ByteArray, off: Int, len: Int): Int {
+                if (curPos >= endPos) return -1
+                val toRead = len.coerceAtMost((endPos - curPos).toInt())
+                if (toRead <= 0) return 0
+                val byteBuffer = java.nio.ByteBuffer.wrap(b, off, toRead)
+                val n = this@FirmwareSource.read(curPos, byteBuffer)
+                if (n > 0) {
+                    curPos += n
+                }
+                return n
+            }
+        }
+    }
 }
 
 class FileChannelSource(

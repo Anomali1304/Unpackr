@@ -9,6 +9,7 @@ import com.unpackr.engine.model.FormatMatch
 import com.unpackr.engine.model.PartitionEntry
 import com.unpackr.engine.model.UnsupportedPackageException
 import com.unpackr.engine.source.FirmwareSource
+import com.unpackr.engine.zip.ZipReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -18,10 +19,13 @@ import org.tukaani.xz.XZInputStream
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStream
-import java.io.InputStreamReader
 import java.io.RandomAccessFile
 import java.security.MessageDigest
 
+/**
+ * Handles Android block-based OTA archives (system.new.dat, system.new.dat.br, system.new.dat.xz).
+ * Fully decodes Brotli compression and maps transfer.list block commands into raw partition images.
+ */
 class NewDatHandler : FirmwareHandler {
 
     companion object {
@@ -92,45 +96,98 @@ class NewDatHandler : FirmwareHandler {
     }
 
     override fun probe(src: FirmwareSource): FormatMatch? {
-        // Probe in ZIP or directory for *.transfer.list (supporting standard ZIP and Zip64)
-        if (com.unpackr.engine.zip.ZipReader.isZip(src)) {
-            val listEntry = findTransferListEntry(src)
+        if (ZipReader.isZip(src)) {
+            val entries = ZipReader.listEntries(src)
+            val listEntry = entries.firstOrNull { it.name.endsWith(".transfer.list", ignoreCase = true) }?.name
             if (listEntry != null) {
+                val hasBrotli = entries.any { it.name.endsWith(".new.dat.br", ignoreCase = true) }
+                val hasXz = entries.any { it.name.endsWith(".new.dat.xz", ignoreCase = true) }
+                val compressionTag = when {
+                    hasBrotli -> "Brotli (.new.dat.br)"
+                    hasXz -> "XZ (.new.dat.xz)"
+                    else -> "Raw Block (.new.dat)"
+                }
                 return FormatMatch(
                     handler = this,
                     confidence = 0.95f,
-                    formatName = "Android Block Transfer (system.new.dat)",
-                    details = "Android block-based OTA (new.dat) detected: $listEntry"
+                    formatName = "Android Block Transfer ($compressionTag)",
+                    details = "Android block-based OTA detected with $listEntry"
                 )
             }
         }
         return null
     }
 
-    private fun findTransferListEntry(src: FirmwareSource): String? {
-        val entries = com.unpackr.engine.zip.ZipReader.listEntries(src)
-        return entries.firstOrNull { it.name.endsWith(".transfer.list", ignoreCase = true) }?.name
-    }
-
     override suspend fun inspect(src: FirmwareSource): FirmwareInfo {
-        val partitions = listOf(
-            PartitionEntry(
-                name = "system.img",
-                size = 1024L * 1024L * 1024L, // estimated default
-                compression = "Block Transfer (Brotli/XZ)",
-                hashAvailable = false,
-                isCommon = true
+        val entries = ZipReader.listEntries(src)
+        val transferListEntries = entries.filter { it.name.endsWith(".transfer.list", ignoreCase = true) }
+        val partitions = mutableListOf<PartitionEntry>()
+        val details = mutableMapOf<String, String>()
+
+        for (tlEntry in transferListEntries) {
+            val prefix = tlEntry.name.substringBefore(".transfer.list")
+            val partName = "${prefix.substringAfterLast('/')}.img"
+
+            val datBr = entries.firstOrNull { it.name.equals("$prefix.new.dat.br", ignoreCase = true) }
+            val datXz = entries.firstOrNull { it.name.equals("$prefix.new.dat.xz", ignoreCase = true) }
+            val datRaw = entries.firstOrNull { it.name.equals("$prefix.new.dat", ignoreCase = true) }
+
+            val compression = when {
+                datBr != null -> "Brotli (.br)"
+                datXz != null -> "XZ (.xz)"
+                datRaw != null -> "Raw (.dat)"
+                else -> "Block Transfer"
+            }
+
+            var size = 0L
+            try {
+                ZipReader.openEntryStream(src, tlEntry).bufferedReader(Charsets.UTF_8).use { reader ->
+                    val tl = parseTransferList(reader)
+                    size = tl.totalOutputBytes
+                }
+            } catch (_: Exception) {
+                size = 1024L * 1024L * 1024L
+            }
+
+            val isCommon = partName.startsWith("boot") || partName.startsWith("system") || partName.startsWith("vendor")
+            partitions.add(
+                PartitionEntry(
+                    name = partName,
+                    size = size,
+                    compression = compression,
+                    hashAvailable = false,
+                    isCommon = isCommon
+                )
             )
-        )
+        }
+
+        // Also check if the ZIP contains standalone partition images (e.g., boot.img, vbmeta.img, dtbo.img)
+        val directImgs = entries.filter {
+            it.name.endsWith(".img", ignoreCase = true) && !it.name.contains("/")
+        }
+        for (imgEntry in directImgs) {
+            if (partitions.none { it.name.equals(imgEntry.name, ignoreCase = true) }) {
+                partitions.add(
+                    PartitionEntry(
+                        name = imgEntry.name,
+                        size = imgEntry.uncompressedSize,
+                        compression = if (imgEntry.method == 8) "ZIP Deflate" else "Stored",
+                        hashAvailable = false,
+                        isCommon = true
+                    )
+                )
+            }
+        }
+
+        details["Container Format"] = "Android Block Transfer OTA"
+        details["Partitions Found"] = "${partitions.size} partition image(s)"
+        details["Brotli Engine"] = "Supported (RFC 7932 pure JVM decoder)"
 
         return FirmwareInfo(
             formatId = "new_dat",
-            formatName = "Android Block Transfer (system.new.dat)",
+            formatName = "Android Block Transfer (system.new.dat.br)",
             partitions = partitions,
-            rawDetails = mapOf(
-                "Container Type" to "Android Block OTA",
-                "Dat Compression" to "Brotli (.br) / XZ (.xz)"
-            )
+            rawDetails = details
         )
     }
 
@@ -141,29 +198,158 @@ class NewDatHandler : FirmwareHandler {
         options: ExtractionOptions
     ): Flow<ExtractionEvent> = flow {
         val startTime = System.currentTimeMillis()
-        val targetName = selection.firstOrNull() ?: "system.img"
-        val outFile = File(outputDir, targetName)
+        val entries = ZipReader.listEntries(src)
+        val successful = mutableListOf<ExtractedFile>()
+        val failed = mutableMapOf<String, String>()
 
-        emit(ExtractionEvent.PartitionStarted(targetName, 1, 1, 1024L * 1024L * 1024L))
+        val totalSelected = selection.size
+        var currentIndex = 0
 
-        // Reconstruct raw block image using block writes
-        RandomAccessFile(outFile, "rw").use { raf ->
-            raf.setLength(BLOCK_SIZE * 1024)
+        for (targetName in selection) {
+            currentIndex++
+            val prefix = targetName.removeSuffix(".img")
+            val tlEntry = entries.firstOrNull { 
+                it.name.endsWith("$prefix.transfer.list", ignoreCase = true) 
+            }
+            val datBr = entries.firstOrNull { it.name.endsWith("$prefix.new.dat.br", ignoreCase = true) }
+            val datXz = entries.firstOrNull { it.name.endsWith("$prefix.new.dat.xz", ignoreCase = true) }
+            val datRaw = entries.firstOrNull { it.name.endsWith("$prefix.new.dat", ignoreCase = true) }
+            val datEntry = datBr ?: datXz ?: datRaw
+
+            val directImgEntry = entries.firstOrNull { it.name.equals(targetName, ignoreCase = true) }
+
+            val outFile = File(outputDir, targetName)
+
+            if (tlEntry != null && datEntry != null) {
+                try {
+                    val tl = ZipReader.openEntryStream(src, tlEntry).bufferedReader(Charsets.UTF_8).use {
+                        parseTransferList(it)
+                    }
+
+                    if (tl.isIncremental) {
+                        throw UnsupportedPackageException(
+                            feature = "Incremental OTA",
+                            message = "Incremental OTA updates require the existing partition image on the device.",
+                            suggestion = "Please use a Full OTA or Fastboot factory ROM package."
+                        )
+                    }
+
+                    emit(ExtractionEvent.PartitionStarted(targetName, currentIndex, totalSelected, tl.totalOutputBytes))
+
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    var writtenBytes = 0L
+
+                    RandomAccessFile(outFile, "rw").use { raf ->
+                        raf.setLength(tl.totalOutputBytes)
+
+                        val rawEntryStream = ZipReader.openEntryStream(src, datEntry)
+                        val decompressedStream: InputStream = when {
+                            datEntry.name.endsWith(".br", ignoreCase = true) -> BrotliInputStream(rawEntryStream)
+                            datEntry.name.endsWith(".xz", ignoreCase = true) -> XZInputStream(rawEntryStream)
+                            else -> rawEntryStream
+                        }
+
+                        decompressedStream.use { stream ->
+                            val buffer = ByteArray(64 * 1024)
+                            for (cmd in tl.commands) {
+                                when (cmd.type) {
+                                    "new" -> {
+                                        for (extent in cmd.extents) {
+                                            val startBlock = extent.first
+                                            val endBlock = extent.second
+                                            val blocksToWrite = endBlock - startBlock
+                                            var bytesRemainingForExtent = blocksToWrite * BLOCK_SIZE
+
+                                            raf.seek(startBlock * BLOCK_SIZE)
+
+                                            while (bytesRemainingForExtent > 0) {
+                                                val toRead = bytesRemainingForExtent.coerceAtMost(buffer.size.toLong()).toInt()
+                                                var readTotal = 0
+                                                while (readTotal < toRead) {
+                                                    val n = stream.read(buffer, readTotal, toRead - readTotal)
+                                                    if (n <= 0) break
+                                                    readTotal += n
+                                                }
+                                                if (readTotal == 0) break
+
+                                                raf.write(buffer, 0, readTotal)
+                                                digest.update(buffer, 0, readTotal)
+                                                writtenBytes += readTotal
+                                                bytesRemainingForExtent -= readTotal
+
+                                                emit(
+                                                    ExtractionEvent.BytesWritten(
+                                                        partition = targetName,
+                                                        currentBytes = writtenBytes,
+                                                        totalBytes = tl.totalOutputBytes,
+                                                        speedBytesPerSec = 0L,
+                                                        overallProgressFraction = (writtenBytes.toFloat() / tl.totalOutputBytes.toFloat()).coerceIn(0f, 1f)
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    }
+                                    "zero", "erase" -> {
+                                        // Blocks are zero-initialized by setLength
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    val sha256Hex = digest.digest().joinToString("") { "%02x".format(it) }
+                    emit(ExtractionEvent.PartitionVerified(targetName, sha256Hex, true))
+                    emit(ExtractionEvent.PartitionFinished(targetName, outFile.absolutePath, outFile.length(), sha256Hex))
+                    successful.add(ExtractedFile(targetName, outFile, outFile.length(), sha256Hex))
+
+                } catch (e: Exception) {
+                    outFile.delete()
+                    failed[targetName] = e.message ?: "Extraction failed"
+                    emit(ExtractionEvent.PartitionFailed(targetName, e.message ?: "Failed"))
+                }
+            } else if (directImgEntry != null) {
+                try {
+                    emit(ExtractionEvent.PartitionStarted(targetName, currentIndex, totalSelected, directImgEntry.uncompressedSize))
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    var writtenBytes = 0L
+
+                    ZipReader.openEntryStream(src, directImgEntry).use { input ->
+                        outFile.outputStream().use { output ->
+                            val buffer = ByteArray(64 * 1024)
+                            var read: Int
+                            while (input.read(buffer).also { read = it } != -1) {
+                                output.write(buffer, 0, read)
+                                digest.update(buffer, 0, read)
+                                writtenBytes += read
+                                emit(
+                                    ExtractionEvent.BytesWritten(
+                                        partition = targetName,
+                                        currentBytes = writtenBytes,
+                                        totalBytes = directImgEntry.uncompressedSize,
+                                        speedBytesPerSec = 0L,
+                                        overallProgressFraction = if (directImgEntry.uncompressedSize > 0) (writtenBytes.toFloat() / directImgEntry.uncompressedSize.toFloat()).coerceIn(0f, 1f) else 0.5f
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    val sha256Hex = digest.digest().joinToString("") { "%02x".format(it) }
+                    emit(ExtractionEvent.PartitionVerified(targetName, sha256Hex, true))
+                    emit(ExtractionEvent.PartitionFinished(targetName, outFile.absolutePath, outFile.length(), sha256Hex))
+                    successful.add(ExtractedFile(targetName, outFile, outFile.length(), sha256Hex))
+                } catch (e: Exception) {
+                    outFile.delete()
+                    failed[targetName] = e.message ?: "Extraction failed"
+                    emit(ExtractionEvent.PartitionFailed(targetName, e.message ?: "Failed"))
+                }
+            } else {
+                failed[targetName] = "Partition $targetName not found in archive"
+                emit(ExtractionEvent.PartitionFailed(targetName, "Not found in archive"))
+            }
         }
 
-        val digest = MessageDigest.getInstance("SHA-256")
-        val sha256Hex = digest.digest().joinToString("") { "%02x".format(it) }
-
-        emit(ExtractionEvent.PartitionVerified(targetName, sha256Hex, true))
-        emit(ExtractionEvent.PartitionFinished(targetName, outFile.absolutePath, outFile.length(), sha256Hex))
-
         val duration = System.currentTimeMillis() - startTime
-        emit(
-            ExtractionEvent.AllFinished(
-                successful = listOf(ExtractedFile(targetName, outFile, outFile.length(), sha256Hex)),
-                failed = emptyMap(),
-                totalDurationMs = duration
-            )
-        )
+        emit(ExtractionEvent.AllFinished(successful, failed, duration))
     }.flowOn(Dispatchers.IO)
 }

@@ -184,4 +184,18 @@ object ZipReader {
 
         return localOffset + 30 + nameLen + extraLen
     }
+
+    /**
+     * Opens an InputStream to read the uncompressed content of a ZIP entry.
+     * Automatically handles STORED (method 0) and DEFLATED (method 8).
+     */
+    fun openEntryStream(src: FirmwareSource, entry: ZipEntryInfo): java.io.InputStream {
+        val dataOffset = getDataOffset(src, entry)
+        val rawStream = src.asInputStream(dataOffset, entry.compressedSize)
+        return when (entry.method) {
+            0 -> rawStream
+            8 -> java.util.zip.InflaterInputStream(rawStream, java.util.zip.Inflater(true))
+            else -> rawStream
+        }
+    }
 }

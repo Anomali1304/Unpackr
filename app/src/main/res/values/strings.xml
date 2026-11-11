@@ -43,10 +43,10 @@
     <string name="home_hero_subtitle">Extract flashable partition images directly on your device with high performance and reliability.</string>
     <string name="home_pick_local_button">Open Local Archive</string>
     <string name="home_pick_local_caption">Supports OTA ZIP, payload.bin, fastboot ROM, .tar.md5, sparse .img</string>
-    <string name="home_url_button">Inspect Remote Download URL</string>
-    <string name="home_url_dialog_title">Inspect Direct Firmware URL</string>
-    <string name="home_url_dialog_desc">Enter a direct download link to an OTA package or factory image. Unpackr will inspect the archive remotely via HTTP Range requests without requiring a full multi-gigabyte download.</string>
-    <string name="home_url_placeholder">https://example.com/firmware.zip</string>
+    <string name="home_url_button">Inspect Remote OTA URL</string>
+    <string name="home_url_dialog_title">Inspect Direct OTA Package URL</string>
+    <string name="home_url_dialog_desc">Enter a direct download link to an OTA / Recovery .zip archive. Unpackr inspects partitions remotely via HTTP Range requests without downloading the multi-gigabyte archive. For Fastboot .tgz archives, please use the Downloader tab.</string>
+    <string name="home_url_placeholder">https://example.com/ota_update.zip</string>
     <string name="home_url_submit">Inspect URL</string>
     <string name="home_url_cancel">Cancel</string>
     <string name="home_recent_files">Recent Archives</string>
@@ -75,10 +75,10 @@
     <string name="detected_shortcut_system">System &amp; Dynamic</string>
     <string name="detected_selected_count">%1$d of %2$d selected (%3$s)</string>
     <string name="detected_start_button">Extract Selected Images</string>
-    <string name="detected_download_full_rom">Unduh Full ROM Asli</string>
-    <string name="detected_download_full_rom_sub">Unduh berkas arsip utuh (%1$s) langsung ke folder Download</string>
-    <string name="detected_extract_selected_count">Ekstrak %1$d Partisi (%2$s)</string>
-    <string name="toast_download_rom_started">Mengunduh %1$s ke folder Download via sistem...</string>
+    <string name="detected_download_full_rom">Download Full Original ROM</string>
+    <string name="detected_download_full_rom_sub">Download complete archive (%1$s) directly to /sdcard/Download/Unpackr</string>
+    <string name="detected_extract_selected_count">Extract %1$d Partition(s) (%2$s)</string>
+    <string name="toast_download_rom_started">Downloading %1$s to /sdcard/Download/Unpackr...</string>
     <string name="detected_options_button">Engine Settings</string>
 
     <!-- Options Bottom Sheet -->

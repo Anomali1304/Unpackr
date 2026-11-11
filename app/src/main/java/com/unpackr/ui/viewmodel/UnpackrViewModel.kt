@@ -74,7 +74,7 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
     private val _screenState = MutableStateFlow<ScreenState>(ScreenState.Home)
     val screenState = _screenState.asStateFlow()
 
-    private val _mainTab = MutableStateFlow(0) // 0: Home, 1: Downloader, 2: Recents
+    private val _mainTab = MutableStateFlow(0) // 0: Home, 1: Recents, 2: Downloader
     val mainTab = _mainTab.asStateFlow()
 
     private val _downloadedFiles = MutableStateFlow<List<DownloadedFileItem>>(emptyList())
@@ -104,7 +104,7 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
 
     fun setMainTab(tab: Int) {
         _mainTab.value = tab
-        if (tab == 1) {
+        if (tab == 2) {
             refreshDownloadedFiles()
         }
     }
@@ -198,6 +198,12 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
             return
         }
 
+        val cleanPath = trimmed.substringBefore('?').substringBefore('#').lowercase()
+        if (cleanPath.endsWith(".tgz") || cleanPath.endsWith(".tar.gz") || cleanPath.endsWith(".tar") || cleanPath.endsWith(".tar.md5")) {
+            _errorMessage.value = "Remote URL inspection only supports OTA and Recovery .zip archives (due to random-seek central directory indexing). For Fastboot .tgz archives, please use the Downloader tab to download directly to /sdcard/Download/Unpackr before unpacking."
+            return
+        }
+
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
@@ -210,6 +216,10 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
                     val httpSource = com.unpackr.engine.source.HttpFirmwareSource(trimmed)
                     currentSource = httpSource
 
+                    if (!com.unpackr.engine.zip.ZipReader.isZip(httpSource)) {
+                        throw IllegalArgumentException("Remote URL inspection only supports .zip archives (OTA payload.bin / .new.dat.br). Non-zip formats cannot be indexed selectively over HTTP range requests.")
+                    }
+
                     processSource(httpSource, httpSource.fileName, trimmed)
                 } catch (e: EncryptedFormatException) {
                     _screenState.value = ScreenState.Unsupported(
@@ -221,7 +231,7 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
                 } catch (e: Exception) {
                     val rawMsg = e.message ?: "General Error"
                     val userFriendlyMsg = if (rawMsg.isBlank() || rawMsg.toIntOrNull() != null || rawMsg.startsWith("-")) {
-                        "Gagal membaca paket firmware ($rawMsg). Pastikan tautan langsung (direct link) masih aktif."
+                        "Failed to read firmware package ($rawMsg). Please verify that the direct link is still accessible."
                     } else {
                         rawMsg
                     }
@@ -354,7 +364,7 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
                 } catch (e: Exception) {
                     val rawMsg = e.message ?: "General Error"
                     val userFriendlyMsg = if (rawMsg.isBlank() || rawMsg.toIntOrNull() != null || rawMsg.startsWith("-")) {
-                        "Gagal membaca paket firmware ($rawMsg)."
+                        "Failed to read firmware package ($rawMsg)."
                     } else {
                         rawMsg
                     }
@@ -369,7 +379,7 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
     fun startDownloadToUnpackr(url: String, context: Context) {
         val trimmed = url.trim()
         if (trimmed.isBlank() || (!trimmed.startsWith("http://", ignoreCase = true) && !trimmed.startsWith("https://", ignoreCase = true))) {
-            android.widget.Toast.makeText(context, "URL tidak valid. Masukkan tautan http:// atau https://", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, "Invalid URL. Please enter an http:// or https:// link", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -379,7 +389,7 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
             val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
             val request = android.app.DownloadManager.Request(Uri.parse(trimmed))
                 .setTitle(fileName)
-                .setDescription("Mengunduh ke /sdcard/Download/Unpackr...")
+                .setDescription("Downloading to /sdcard/Download/Unpackr...")
                 .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, "Unpackr/$fileName")
                 .setAllowedOverMetered(true)
@@ -388,14 +398,14 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
             downloadManager.enqueue(request)
             android.widget.Toast.makeText(
                 context,
-                "Mengunduh $fileName ke /sdcard/Download/Unpackr...",
+                "Downloading $fileName to /sdcard/Download/Unpackr...",
                 android.widget.Toast.LENGTH_LONG
             ).show()
             refreshDownloadedFiles()
         } catch (e: Exception) {
             android.widget.Toast.makeText(
                 context,
-                "Gagal memulai unduhan: ${e.message}",
+                "Failed to start download: ${e.message}",
                 android.widget.Toast.LENGTH_LONG
             ).show()
         }
@@ -408,7 +418,7 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
     fun downloadFullRom(context: Context) {
         val httpSource = currentSource as? com.unpackr.engine.source.HttpFirmwareSource
         if (httpSource == null) {
-            android.widget.Toast.makeText(context, "Berkas ini bukan dari tautan unduhan online.", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, "This file is not from a remote URL.", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -417,7 +427,7 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
             val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
             val request = android.app.DownloadManager.Request(Uri.parse(httpSource.url))
                 .setTitle(httpSource.fileName)
-                .setDescription("Mengunduh arsip ROM asli...")
+                .setDescription("Downloading full original ROM archive...")
                 .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, "Unpackr/${httpSource.fileName}")
                 .setAllowedOverMetered(true)
@@ -426,14 +436,14 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
             downloadManager.enqueue(request)
             android.widget.Toast.makeText(
                 context,
-                "Mengunduh ${httpSource.fileName} ke /sdcard/Download/Unpackr...",
+                "Downloading ${httpSource.fileName} to /sdcard/Download/Unpackr...",
                 android.widget.Toast.LENGTH_LONG
             ).show()
             refreshDownloadedFiles()
         } catch (e: Exception) {
             android.widget.Toast.makeText(
                 context,
-                "Gagal memulai unduhan: ${e.message}",
+                "Failed to start download: ${e.message}",
                 android.widget.Toast.LENGTH_LONG
             ).show()
         }
