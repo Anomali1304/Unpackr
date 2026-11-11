@@ -259,9 +259,8 @@ class UnpackrViewModel(application: Application) : AndroidViewModel(application)
 
         val info = match.handler.inspect(source)
 
-        // Select common partitions by default
-        val commons = info.partitions.filter { it.isCommon }.map { it.name }.toSet()
-        _selectedPartitions.value = if (commons.isNotEmpty()) commons else info.partitions.take(5).map { it.name }.toSet()
+        // No partition pre-filter or bias: user chooses partitions cleanly
+        _selectedPartitions.value = emptySet()
 
         // Update recents
         val updatedRecents = _recentItems.value.toMutableList()

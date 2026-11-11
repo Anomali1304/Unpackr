@@ -52,7 +52,7 @@ class AbPayloadHandler : FirmwareHandler {
         val manifest: DeltaArchiveManifest
     )
 
-    private fun parseHeader(src: FirmwareSource): PayloadHeader? {
+    private fun parseHeader(src: FirmwareSource, parseOperations: Boolean = false): PayloadHeader? {
         if (src.size < 24) return null
         val magic = src.readIntBe(0)
         if (magic != PAYLOAD_MAGIC) return null
@@ -65,7 +65,7 @@ class AbPayloadHandler : FirmwareHandler {
         if (src.size < manifestOffset + manifestSize) return null
 
         val manifestBytes = src.readBytes(manifestOffset, manifestSize.toInt())
-        val manifest = DeltaManifestParser.parse(manifestBytes)
+        val manifest = DeltaManifestParser.parse(manifestBytes, parseOperations = parseOperations)
         val dataOffset = manifestOffset + manifestSize + signatureSize
 
         return PayloadHeader(
@@ -228,8 +228,8 @@ class AbPayloadHandler : FirmwareHandler {
         val tempFilesToClean = mutableListOf<File>()
 
         try {
-            val header = parseHeader(payloadSrc)
-                ?: throw CorruptHeaderException("Header payload.bin rusak")
+            val header = parseHeader(payloadSrc, parseOperations = true)
+                ?: throw CorruptHeaderException("Corrupt payload.bin header structure")
 
             val blockSize = header.manifest.blockSize
             val partitionsToExtract = header.manifest.partitions.filter {

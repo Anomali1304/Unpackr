@@ -155,7 +155,7 @@ class CodedInputStream(private val buffer: ByteBuffer) {
 
 object DeltaManifestParser {
 
-    fun parse(bytes: ByteArray): DeltaArchiveManifest {
+    fun parse(bytes: ByteArray, parseOperations: Boolean = true): DeltaArchiveManifest {
         val stream = CodedInputStream(bytes)
         var blockSize = 4096L
         var securityPatch: String? = null
@@ -172,7 +172,7 @@ object DeltaManifestParser {
                 4 -> {
                     if (wireType == 2) {
                         val subBytes = stream.readBytes()
-                        partitions.add(parsePartitionUpdate(subBytes))
+                        partitions.add(parsePartitionUpdate(subBytes, parseOperations))
                     } else {
                         stream.skipField(tag)
                     }
@@ -190,7 +190,7 @@ object DeltaManifestParser {
                 13 -> {
                     if (wireType == 2) {
                         val subBytes = stream.readBytes()
-                        partitions.add(parsePartitionUpdate(subBytes))
+                        partitions.add(parsePartitionUpdate(subBytes, parseOperations))
                     } else {
                         stream.skipField(tag)
                     }
@@ -214,7 +214,7 @@ object DeltaManifestParser {
         )
     }
 
-    private fun parsePartitionUpdate(bytes: ByteArray): PartitionUpdate {
+    private fun parsePartitionUpdate(bytes: ByteArray, parseOperations: Boolean = true): PartitionUpdate {
         val stream = CodedInputStream(bytes)
         var name = ""
         var newInfo: PartitionInfo? = null
@@ -230,17 +230,27 @@ object DeltaManifestParser {
                     4 -> try { oldInfo = parsePartitionInfo(stream.readBytes()) } catch (_: Exception) {}
                     5 -> try { newInfo = parsePartitionInfo(stream.readBytes()) } catch (_: Exception) {}
                     6 -> {
-                        try {
-                            val sub = stream.readBytes()
+                        if (parseOperations) {
                             try {
-                                operations.add(parseInstallOperation(sub))
-                            } catch (_: Exception) {
-                                oldInfo = parsePartitionInfo(sub)
-                            }
-                        } catch (_: Exception) {}
+                                val sub = stream.readBytes()
+                                try {
+                                    operations.add(parseInstallOperation(sub))
+                                } catch (_: Exception) {
+                                    oldInfo = parsePartitionInfo(sub)
+                                }
+                            } catch (_: Exception) {}
+                        } else {
+                            try { stream.skipField(tag) } catch (_: Exception) { break }
+                        }
                     }
                     7 -> try { newInfo = parsePartitionInfo(stream.readBytes()) } catch (_: Exception) {}
-                    8 -> try { operations.add(parseInstallOperation(stream.readBytes())) } catch (_: Exception) {}
+                    8 -> {
+                        if (parseOperations) {
+                            try { operations.add(parseInstallOperation(stream.readBytes())) } catch (_: Exception) {}
+                        } else {
+                            try { stream.skipField(tag) } catch (_: Exception) { break }
+                        }
+                    }
                     else -> try { stream.skipField(tag) } catch (_: Exception) { break }
                 }
             }

@@ -20,7 +20,8 @@ class HttpFirmwareSource(
 
     companion object {
         private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-        private const val CACHE_SIZE = 128 * 1024 // 128KB cache for head/tail
+        private const val HEAD_CACHE_SIZE = 512 * 1024 // 512KB cache for head (captures headers, payload manifest)
+        private const val TAIL_CACHE_SIZE = 512 * 1024 // 512KB cache for tail (captures EOCD, zip64, central directory)
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -47,7 +48,7 @@ class HttpFirmwareSource(
         val headProbeReq = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
-            .header("Range", "bytes=0-${CACHE_SIZE - 1}")
+            .header("Range", "bytes=0-${HEAD_CACHE_SIZE - 1}")
             .get()
             .build()
 
@@ -88,8 +89,8 @@ class HttpFirmwareSource(
             b.size >= 4 && b[0] == 0x50.toByte() && b[1] == 0x4B.toByte()
         } ?: false
 
-        if (supportsRange && size > CACHE_SIZE && isZipHead) {
-            tailOffset = (size - CACHE_SIZE).coerceAtLeast(0L)
+        if (supportsRange && size > TAIL_CACHE_SIZE && isZipHead) {
+            tailOffset = (size - TAIL_CACHE_SIZE).coerceAtLeast(0L)
             val tailReq = Request.Builder()
                 .url(url)
                 .header("User-Agent", USER_AGENT)

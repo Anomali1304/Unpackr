@@ -43,6 +43,18 @@ class FormatDetector(
             return encryptedMatch
         }
 
+        // Fast-path: If archive is a ZIP container (PK\x03\x04), probe ZIP-based handlers immediately
+        if (com.unpackr.engine.zip.ZipReader.isZip(src)) {
+            for (handler in listOf(AbPayloadHandler(), NewDatHandler(), FastbootZipHandler())) {
+                try {
+                    val match = handler.probe(src)
+                    if (match != null && match.confidence >= 0.90f) {
+                        return match
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
         val matches = mutableListOf<FormatMatch>()
 
         for (handler in handlers) {

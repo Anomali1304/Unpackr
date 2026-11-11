@@ -368,15 +368,15 @@ fun DetectedScreen(
                 )
             }
 
-            // Shortcuts Chips
+            // Selection Action Chips
             item {
-                FlowRow(
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     FilterChip(
-                        selected = selectedPartitions.size == info.partitions.size,
+                        selected = selectedPartitions.size == info.partitions.size && info.partitions.isNotEmpty(),
                         onClick = onSelectAll,
                         label = { Text(stringResource(R.string.detected_select_all)) }
                     )
@@ -384,16 +384,6 @@ fun DetectedScreen(
                         selected = selectedPartitions.isEmpty(),
                         onClick = onDeselectAll,
                         label = { Text(stringResource(R.string.detected_deselect_all)) }
-                    )
-                    FilterChip(
-                        selected = false,
-                        onClick = onSelectCommon,
-                        label = { Text("Core (Boot/VBMeta)") }
-                    )
-                    FilterChip(
-                        selected = false,
-                        onClick = onSelectSystem,
-                        label = { Text("System & Dynamic") }
                     )
                 }
             }
@@ -471,31 +461,6 @@ fun PartitionItemCard(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
-                    if (partition.isCommon) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Star,
-                                    contentDescription = "Core Partition",
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = "Core",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))

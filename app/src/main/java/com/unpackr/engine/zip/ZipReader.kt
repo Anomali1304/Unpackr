@@ -32,11 +32,15 @@ object ZipReader {
         return src.readIntLe(0) == SIG_LOCAL_HEADER
     }
 
+    private val entriesCache = java.util.Collections.synchronizedMap(java.util.WeakHashMap<FirmwareSource, List<ZipEntryInfo>>())
+
     /**
      * Finds and parses the Central Directory, returning all entries.
      * Fully compliant with standard ZIP (32-bit) and Zip64 (64-bit).
      */
     fun listEntries(src: FirmwareSource): List<ZipEntryInfo> {
+        entriesCache[src]?.let { return it }
+
         val maxSearch = 65536L + 300L
         val searchStart = (src.size - maxSearch).coerceAtLeast(0L)
         val searchLen = (src.size - searchStart).toInt()
@@ -161,6 +165,7 @@ object ZipReader {
             pos += 46 + nameLen + extraLen + commentLen
         }
 
+        entriesCache[src] = entries
         return entries
     }
 
