@@ -41,7 +41,7 @@ object ZipReader {
     fun listEntries(src: FirmwareSource): List<ZipEntryInfo> {
         entriesCache[src]?.let { return it }
 
-        val maxSearch = 65536L + 300L
+        val maxSearch = 512 * 1024L
         val searchStart = (src.size - maxSearch).coerceAtLeast(0L)
         val searchLen = (src.size - searchStart).toInt()
         val tailBuffer = src.readBytes(searchStart, searchLen)

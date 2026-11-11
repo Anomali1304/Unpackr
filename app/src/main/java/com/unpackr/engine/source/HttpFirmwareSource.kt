@@ -44,13 +44,18 @@ class HttpFirmwareSource(
     private val PREFETCH_SIZE = 1024 * 1024 // 1 MB prefetch buffer for smooth streaming
 
     init {
-        // Probe file size and fetch the first chunk (HEAD cache) in one go
+        // Fetch head chunk (512KB) to inspect size and headers
         val headProbeReq = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
             .header("Range", "bytes=0-${HEAD_CACHE_SIZE - 1}")
             .get()
             .build()
+
+        var remoteSize = -1L
+        var isRangeSupported = false
+        var detectedFileName = "remote_firmware.bin"
+        var headBytes: ByteArray? = null
 
         client.newCall(headProbeReq).execute().use { response ->
             if (!response.isSuccessful && response.code != 206) {
@@ -61,31 +66,35 @@ class HttpFirmwareSource(
             val contentLength = response.header("Content-Length")
             val contentDisposition = response.header("Content-Disposition")
 
-            val fullSize = if (contentRange != null && contentRange.contains("/")) {
+            remoteSize = if (contentRange != null && contentRange.contains("/")) {
                 contentRange.substringAfterLast('/').toLongOrNull() ?: -1L
             } else {
                 contentLength?.toLongOrNull() ?: -1L
             }
 
-            if (fullSize <= 0) {
+            if (remoteSize <= 0) {
                 throw IOException("Unable to determine remote file size (Content-Length missing)")
             }
 
-            size = fullSize
-            supportsRange = response.code == 206
-            fileName = if (contentDisposition?.contains("filename=") == true) {
+            isRangeSupported = response.code == 206
+            detectedFileName = if (contentDisposition?.contains("filename=") == true) {
                 contentDisposition.substringAfter("filename=").trim('"', ' ', ';')
             } else {
                 url.substringBefore('?').substringAfterLast('/').ifBlank { "remote_firmware.bin" }
             }
 
-            if (supportsRange) {
-                headCache = response.body?.bytes()
+            if (isRangeSupported) {
+                headBytes = response.body?.bytes()
             }
         }
 
-        // Prefetch tail cache ONLY for ZIP parsing (where EOCD is at the end)
-        val isZipHead = headCache?.let { b ->
+        size = remoteSize
+        supportsRange = isRangeSupported
+        fileName = detectedFileName
+        headCache = headBytes
+
+        // Immediately fetch TAIL cache (512KB) for ZIP EOCD / Central Directory
+        val isZipHead = headBytes?.let { b ->
             b.size >= 4 && b[0] == 0x50.toByte() && b[1] == 0x4B.toByte()
         } ?: false
 
@@ -97,7 +106,7 @@ class HttpFirmwareSource(
                 .header("Range", "bytes=$tailOffset-${size - 1}")
                 .get()
                 .build()
-            
+
             try {
                 client.newCall(tailReq).execute().use { resp ->
                     if (resp.isSuccessful || resp.code == 206) {
